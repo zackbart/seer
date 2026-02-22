@@ -1,0 +1,11 @@
+# bv (beads viewer) local config and caches
+.bv/
+
+# local beads database and locks
+.beads/
+
+# build outputs
+seer
+
+# os/editor
+.DS_Store
