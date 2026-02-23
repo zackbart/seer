@@ -23,6 +23,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/truncate"
 )
 
 const (
@@ -90,9 +91,11 @@ func categorise(e entry) fileCategory {
 		return catImage
 	case ".md", ".markdown", ".mdx", ".rst", ".txt":
 		return catDoc
+	case ".sh", ".bash", ".zsh", ".fish", ".ps1", ".bat", ".cmd":
+		return catExec
 	case ".go", ".js", ".ts", ".jsx", ".tsx", ".py", ".rb", ".rs", ".c", ".cpp",
-		".h", ".java", ".cs", ".php", ".swift", ".kt", ".sh", ".bash", ".zsh",
-		".fish", ".lua", ".ex", ".exs", ".hs", ".ml", ".mli", ".clj", ".scala",
+		".h", ".java", ".cs", ".php", ".swift", ".kt",
+		".lua", ".ex", ".exs", ".hs", ".ml", ".mli", ".clj", ".scala",
 		".vim", ".mmd", ".mermaid":
 		return catCode
 	case ".json", ".yaml", ".yml", ".toml", ".ini", ".env", ".conf", ".config",
@@ -103,25 +106,115 @@ func categorise(e entry) fileCategory {
 	return catOther
 }
 
+// nerdFonts controls whether Nerd Font glyphs are used.
+// Set SEER_NO_NERD_FONT=1 to force plain Unicode fallback.
+var nerdFonts = os.Getenv("SEER_NO_NERD_FONT") != "1"
+
+// nerdIconByExt maps file extensions to specific Nerd Font glyphs.
+var nerdIconByExt = map[string]string{
+	// languages
+	".go":       "\ue627 ", //
+	".js":       "\ue60c ", //
+	".ts":       "\ue628 ", //
+	".jsx":      "\ue60c ", //
+	".tsx":      "\ue60c ", //
+	".py":       "\ue606 ", //
+	".rb":       "\ue21e ", //
+	".rs":       "\ue7a8 ", //
+	".c":        "\ue61e ", //
+	".cpp":      "\ue61d ", //
+	".h":        "\uf0fd ", //
+	".java":     "\ue204 ", //
+	".cs":       "\uf031b ", // 󰌛
+	".php":      "\ue60a ", //
+	".swift":    "\ue755 ", //
+	".kt":       "\ue634 ", //
+	".lua":      "\ue620 ", //
+	".hs":       "\ue61f ", //
+	".vim":      "\ue62b ", //
+	".sh":       "\uf489 ", //
+	".bash":     "\uf489 ", //
+	".zsh":      "\uf489 ", //
+	".fish":     "\uf489 ", //
+	".ps1":      "\uf489 ", //
+	".bat":      "\uf489 ", //
+	".cmd":      "\uf489 ", //
+	// docs
+	".md":       "\ue609 ", //
+	".markdown": "\ue609 ", //
+	".mdx":      "\ue609 ", //
+	".rst":      "\uf15c ", //
+	".txt":      "\uf15c ", //
+	// config
+	".json":     "\ue60b ", //
+	".yaml":     "\uf481 ", //
+	".yml":      "\uf481 ", //
+	".toml":     "\uf481 ", //
+	".xml":      "\uf05c0 ", // 󰗀
+	".env":      "\uf462 ", //
+	".ini":      "\uf17a ", //
+	".conf":     "\uf17a ", //
+	// images
+	".png":      "\uf1c5 ", //
+	".jpg":      "\uf1c5 ", //
+	".jpeg":     "\uf1c5 ", //
+	".gif":      "\uf1c5 ", //
+	".webp":     "\uf1c5 ", //
+	".svg":      "\uf1c5 ", //
+	".bmp":      "\uf1c5 ", //
+	// misc
+	".mmd":      "\ueb43 ", //
+	".mermaid":  "\ueb43 ", //
+	".pdf":      "\uf1c1 ", //
+	".zip":      "\uf410 ", //
+	".tar":      "\uf410 ", //
+	".gz":       "\uf410 ", //
+	".gitignore": "\ue702 ", //
+	".dockerignore": "\uf308 ", //
+}
+
+// nerdIconByCategory is the fallback Nerd Font icon per broad category.
+var nerdIconByCategory = map[fileCategory]string{
+	catDir:    "\uf74a ", //
+	catImage:  "\uf1c5 ", //
+	catDoc:    "\uf15c ", //
+	catCode:   "\uf121 ", //
+	catConfig: "\uf462 ", //
+	catExec:   "\uf489 ", //
+	catBinary: "\uf471 ", //
+}
+
+// plainIcon is the Unicode-only fallback per category.
+var plainIcon = map[fileCategory]string{
+	catDir:    "▸ ",
+	catImage:  "⬡ ",
+	catDoc:    "≡ ",
+	catCode:   "⟨⟩ ",
+	catConfig: "⚙ ",
+	catExec:   "⚡ ",
+	catBinary: "⬟ ",
+}
+
 func fileIcon(cat fileCategory) string {
-	switch cat {
-	case catDir:
-		return "▸ "
-	case catImage:
-		return "⬡ "
-	case catDoc:
-		return "≡ "
-	case catCode:
-		return "⟨⟩ "
-	case catConfig:
-		return "⚙ "
-	case catExec:
-		return "⚡ "
-	case catBinary:
-		return "⬟ "
-	default:
+	return fileIconExt(cat, "")
+}
+
+func fileIconExt(cat fileCategory, ext string) string {
+	if !nerdFonts {
+		if icon, ok := plainIcon[cat]; ok {
+			return icon
+		}
 		return "· "
 	}
+	if ext != "" {
+		if icon, ok := nerdIconByExt[strings.ToLower(ext)]; ok {
+			return icon
+		}
+	}
+	if icon, ok := nerdIconByCategory[cat]; ok {
+		return icon
+	}
+	return "\uf15b " // generic file
 }
 
 func fileColor(cat fileCategory) lipgloss.Style {
@@ -160,9 +253,12 @@ type previewLoadedMsg struct {
 	err       error
 }
 
+const previewCacheMax = 50
+
 type model struct {
 	cwd           string
-	entries       []entry
+	allEntries    []entry  // full unfiltered listing
+	entries       []entry  // visible (filtered) listing
 	selected      int
 	showHidden    bool
 	preview       string
@@ -173,6 +269,10 @@ type model struct {
 	loading       bool
 	requestID     int
 	cache         map[string]string
+	cacheOrder    []string // LRU insertion order for cache eviction
+	// Search / filter state
+	searching  bool
+	searchQuery string
 }
 
 func initialModel() model {
@@ -189,6 +289,7 @@ func initialModel() model {
 
 	return model{
 		cwd:        cwd,
+		allEntries: entries,
 		entries:    entries,
 		selected:   0,
 		preview:    "",
@@ -202,6 +303,14 @@ func (m model) Init() tea.Cmd {
 	return m.requestPreview()
 }
 
+// navigate sets the selected index, resets the preview scroll, and returns a
+// requestPreview command. It is the single canonical way to change selection.
+func (m *model) navigate(idx int) tea.Cmd {
+	m.selected = idx
+	m.previewOffset = 0
+	return m.requestPreview()
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -211,30 +320,29 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.requestPreview()
 
 	case tea.KeyMsg:
+		// In search mode, printable characters extend the query.
+		if m.searching && len(msg.Runes) == 1 {
+			m.searchQuery += string(msg.Runes)
+			m.entries = m.applySearch(m.allEntries)
+			m.selected = 0
+			return m, m.requestPreview()
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "j", "down":
 			if m.selected < len(m.entries)-1 {
-				m.selected++
-				m.previewOffset = 0
-				return m, m.requestPreview()
+				return m, m.navigate(m.selected + 1)
 			}
 		case "k", "up":
 			if m.selected > 0 {
-				m.selected--
-				m.previewOffset = 0
-				return m, m.requestPreview()
+				return m, m.navigate(m.selected - 1)
 			}
 		case "g", "home":
-			m.selected = 0
-			m.previewOffset = 0
-			return m, m.requestPreview()
+			return m, m.navigate(0)
 		case "G", "end":
 			if len(m.entries) > 0 {
-				m.selected = len(m.entries) - 1
-				m.previewOffset = 0
-				return m, m.requestPreview()
+				return m, m.navigate(len(m.entries) - 1)
 			}
 		case "l", "right", "enter":
 			if len(m.entries) == 0 {
@@ -247,9 +355,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.requestPreview()
 			}
-			m.status = fmt.Sprintf("previewing %s", picked.name)
 			return m, m.requestPreview()
 		case "h", "left", "backspace":
+			if m.searching {
+				if key := msg.String(); key == "backspace" && len(m.searchQuery) > 0 {
+					runes := []rune(m.searchQuery)
+					m.searchQuery = string(runes[:len(runes)-1])
+					m.entries = m.applySearch(m.allEntries)
+					m.selected = 0
+					return m, m.requestPreview()
+				}
+				break
+			}
 			parent := filepath.Dir(m.cwd)
 			if parent != m.cwd {
 				if err := m.changeDir(parent); err != nil {
@@ -258,13 +375,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.requestPreview()
 			}
 		case ".":
+			// Remember current filename so we can restore position after reload.
+			var prevName string
+			if m.selected < len(m.entries) {
+				prevName = m.entries[m.selected].name
+			}
 			m.showHidden = !m.showHidden
 			entries, err := listDir(m.cwd, m.showHidden)
 			if err != nil {
 				m.status = err.Error()
 			} else {
-				m.entries = entries
+				m.allEntries = entries
+				m.entries = m.applySearch(entries)
+				// Restore selection to the same file if still visible.
 				m.selected = 0
+				for i, e := range m.entries {
+					if e.name == prevName {
+						m.selected = i
+						break
+					}
+				}
 				m.previewOffset = 0
 				if m.showHidden {
 					m.status = "showing hidden files"
@@ -273,6 +403,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, m.requestPreview()
+		case "/":
+			m.searching = true
+			m.searchQuery = ""
+			return m, nil
+		case "esc":
+			if m.searching {
+				m.searching = false
+				m.searchQuery = ""
+				m.entries = m.allEntries
+				m.selected = 0
+				return m, m.requestPreview()
+			}
 		case "ctrl+d", "pagedown":
 			m.previewOffset += previewPageSize(m.height)
 			m.clampPreviewOffset()
@@ -284,7 +426,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				m.status = err.Error()
 			} else {
-				m.entries = entries
+				m.allEntries = entries
+				m.entries = m.applySearch(entries)
 				if m.selected >= len(m.entries) {
 					m.selected = max(0, len(m.entries)-1)
 				}
@@ -299,12 +442,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		scroll := previewPageSize(m.height) / 3
+		if scroll < 1 {
+			scroll = 1
+		}
 		switch event.Button {
 		case tea.MouseButtonWheelDown:
-			m.previewOffset += 3
+			m.previewOffset += scroll
 			m.clampPreviewOffset()
 		case tea.MouseButtonWheelUp:
-			m.previewOffset -= 3
+			m.previewOffset -= scroll
 			m.clampPreviewOffset()
 		}
 
@@ -317,7 +464,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.preview = "preview error: " + msg.err.Error()
 			return m, nil
 		}
-		m.cache[msg.cacheKey] = msg.content
+		m.cacheSet(msg.cacheKey, msg.content)
 		m.preview = msg.content
 		m.clampPreviewOffset()
 	}
@@ -333,10 +480,7 @@ func (m model) View() string {
 	}
 
 	// ── dimensions ──────────────────────────────────────────────────────────
-	leftW := max(26, m.width/3)
-	rightW := m.width - leftW - 1 // -1 for the vertical separator column
-	// Reserve rows: 1 top-bar + 1 divider + 1 status + 1 keys = 4 chrome rows
-	bodyH := max(4, m.height-4)
+	leftW, rightW, bodyH := m.layoutDimensions()
 
 	// ── top bar: breadcrumb path ─────────────────────────────────────────────
 	topBar := m.renderTopBar(m.width)
@@ -447,8 +591,8 @@ func (m model) renderTopBar(width int) string {
 func (m model) renderFileList(w, h int) string {
 	// Column layout within the left pane:
 	//   [icon+name ............ size  ]
-	// Size column is 7 chars wide, separated by a space.
-	sizeW := 7
+	// Size column is 9 chars wide ("1023.9 KB" = 9 chars max), separated by a space.
+	sizeW := 9
 	nameW := max(8, w-sizeW-1)
 
 	mutedStyle := lipgloss.NewStyle().Foreground(clrMuted)
@@ -512,7 +656,7 @@ func (m model) renderFileList(w, h int) string {
 		for i := start; i < end; i++ {
 			e := m.entries[i]
 			cat := categorise(e)
-			icon := fileIcon(cat)
+			icon := fileIconExt(cat, filepath.Ext(e.name))
 			colStyle := fileColor(cat)
 
 			displayName := e.name
@@ -571,7 +715,7 @@ func (m model) renderPreviewPane(w, h int) string {
 	if len(m.entries) > 0 {
 		e := m.entries[m.selected]
 		cat := categorise(e)
-		icon := fileIcon(cat)
+		icon := fileIconExt(cat, filepath.Ext(e.name))
 		col := fileColor(cat)
 
 		name := icon + e.name
@@ -640,6 +784,18 @@ func (m model) renderPreviewPane(w, h int) string {
 		sliced = scrollIndicator + "\n" + sliced
 	}
 
+	// Truncate each line to the pane width so no line can wrap in the terminal
+	// and push the top/bottom chrome off screen.
+	if w > 0 {
+		rawLines := strings.Split(sliced, "\n")
+		for i, line := range rawLines {
+			if lipgloss.Width(line) > w {
+				rawLines[i] = truncate.String(line, uint(w))
+			}
+		}
+		sliced = strings.Join(rawLines, "\n")
+	}
+
 	body := lipgloss.NewStyle().Width(w).Height(previewH).Render(sliced)
 
 	return headerLine + "\n" + divider + "\n" + body
@@ -647,37 +803,59 @@ func (m model) renderPreviewPane(w, h int) string {
 
 // renderBottomBar draws the two-line footer: status + keybindings.
 func (m model) renderBottomBar(width int) string {
-	// ── status line ──────────────────────────────────────────────────────────
-	statusIcon := "●"
-	statusStyle := lipgloss.NewStyle().Foreground(clrStatus)
-	statusText := m.status
-	if statusText == "ready" {
-		statusIcon = "◆"
-		statusStyle = lipgloss.NewStyle().Foreground(clrExec)
+	// ── status / search line ─────────────────────────────────────────────────
+	var statusLine string
+	if m.searching {
+		searchStyle := lipgloss.NewStyle().Foreground(clrAccent).Bold(true)
+		queryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+		cursor := lipgloss.NewStyle().Foreground(clrAccent).Render("▌")
+		prompt := searchStyle.Render("/ ") + queryStyle.Render(m.searchQuery) + cursor
+		statusLine = lipgloss.NewStyle().
+			Width(width).
+			Background(clrDim).
+			PaddingLeft(1).
+			Render(prompt)
+	} else {
+		statusIcon := "●"
+		statusStyle := lipgloss.NewStyle().Foreground(clrStatus)
+		statusText := m.status
+		if statusText == "ready" {
+			statusIcon = "◆"
+			statusStyle = lipgloss.NewStyle().Foreground(clrExec)
+		}
+		maxStatusW := width - 3
+		if maxStatusW < 1 {
+			maxStatusW = 1
+		}
+		statusText = trimVisual(statusText, maxStatusW)
+		statusLine = lipgloss.NewStyle().
+			Width(width).
+			Background(clrDim).
+			PaddingLeft(1).
+			Render(statusStyle.Render(statusIcon + " " + statusText))
 	}
-	// Clamp status text so it never forces a line wrap
-	maxStatusW := width - 3 // 1 pad + 1 icon + 1 space
-	if maxStatusW < 1 {
-		maxStatusW = 1
-	}
-	statusText = trimVisual(statusText, maxStatusW)
-	statusLine := lipgloss.NewStyle().
-		Width(width).
-		Background(clrDim).
-		PaddingLeft(1).
-		Render(statusStyle.Render(statusIcon + " " + statusText))
 
 	// ── key hints ────────────────────────────────────────────────────────────
 	type hint struct{ key, desc string }
-	hints := []hint{
-		{"j/k", "move"},
-		{"g/G", "top/end"},
-		{"enter/l", "open"},
-		{"h", "up"},
-		{".", "hidden"},
-		{"^d/u", "scroll"},
-		{"r", "reload"},
-		{"q", "quit"},
+	var hints []hint
+	if m.searching {
+		hints = []hint{
+			{"esc", "cancel"},
+			{"backspace", "delete"},
+			{"enter/l", "open"},
+		}
+	} else {
+		hints = []hint{
+			{"j/k", "move"},
+			{"g/G", "top/end"},
+			{"enter/l", "open"},
+			{"h", "up"},
+			{"/", "search"},
+			{".", "hidden"},
+			{"^d/u", "scroll"},
+			{"r", "reload"},
+			{"q", "quit"},
+		}
 	}
 
 	keyStyle := lipgloss.NewStyle().Foreground(clrHintKey).Bold(true)
@@ -771,9 +949,18 @@ func padRight(s string, n int) string {
 	return s + strings.Repeat(" ", n-w)
 }
 
+// layoutDimensions returns the canonical pane widths and body height derived
+// from the current terminal size. Centralises the layout math used by View,
+// isInPreviewPane, and requestPreview.
+func (m model) layoutDimensions() (leftW, rightW, bodyH int) {
+	leftW = max(26, m.width/3)
+	rightW = m.width - leftW - 1
+	bodyH = max(4, m.height-4)
+	return
+}
+
 func (m model) isInPreviewPane(x, y int) bool {
-	leftW := max(26, m.width/3)
-	bodyH := max(4, m.height-4)
+	leftW, _, bodyH := m.layoutDimensions()
 	previewStartX := leftW + 1
 	previewStartY := 3 // top bar + body header
 	previewEndY := previewStartY + bodyH - 1
@@ -787,11 +974,44 @@ func (m *model) changeDir(path string) error {
 		return err
 	}
 	m.cwd = path
+	m.allEntries = entries
 	m.entries = entries
 	m.selected = 0
 	m.previewOffset = 0
+	m.searchQuery = ""
+	m.searching = false
 	m.status = path
 	return nil
+}
+
+// applySearch filters entries by the current searchQuery (case-insensitive substring).
+// Returns all entries unchanged when the query is empty.
+func (m model) applySearch(entries []entry) []entry {
+	if m.searchQuery == "" {
+		return entries
+	}
+	q := strings.ToLower(m.searchQuery)
+	var out []entry
+	for _, e := range entries {
+		if strings.Contains(strings.ToLower(e.name), q) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// cacheSet stores a preview result and evicts the oldest entry when the cache
+// exceeds previewCacheMax entries.
+func (m *model) cacheSet(key, value string) {
+	if _, exists := m.cache[key]; !exists {
+		m.cacheOrder = append(m.cacheOrder, key)
+	}
+	m.cache[key] = value
+	for len(m.cacheOrder) > previewCacheMax {
+		oldest := m.cacheOrder[0]
+		m.cacheOrder = m.cacheOrder[1:]
+		delete(m.cache, oldest)
+	}
 }
 
 func (m *model) requestPreview() tea.Cmd {
@@ -813,8 +1033,9 @@ func (m *model) requestPreview() tea.Cmd {
 	requestID := m.requestID
 	m.loading = true
 	path := picked.path
-	width := max(40, m.width-m.width/3-2)
-	height := max(8, m.height-4)
+	_, rightW, bodyH := m.layoutDimensions()
+	width := max(40, rightW)
+	height := max(8, bodyH)
 
 	return func() tea.Msg {
 		content, err := buildPreview(path, width, height)
@@ -906,6 +1127,9 @@ func buildPreview(path string, width, height int) (string, error) {
 	if !utf8.ValidString(text) {
 		return fmt.Sprintf("non-utf8 text file: %s\nsize: %s", filepath.Base(path), humanSize(info.Size())), nil
 	}
+	// Normalize Windows-style line endings so \r doesn't corrupt terminal rendering.
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
 
 	switch ext {
 	case ".md", ".markdown", ".mdx":
@@ -941,7 +1165,7 @@ func buildDirPreview(path string) (string, error) {
 	dimStyle := lipgloss.NewStyle().Foreground(clrDim)
 
 	var sb strings.Builder
-	sb.WriteString(dirStyle.Render("▸ "+filepath.Base(path)+"/") + "\n")
+	sb.WriteString(dirStyle.Render(fileIconExt(catDir, "")+filepath.Base(path)+"/") + "\n")
 	sb.WriteString(mutedStyle.Render(fmt.Sprintf("  %d items", len(entries))) + "\n")
 	sb.WriteString(dimStyle.Render("  "+strings.Repeat("─", 30)) + "\n\n")
 
@@ -951,13 +1175,13 @@ func buildDirPreview(path string) (string, error) {
 		name := e.Name()
 		var line string
 		if e.IsDir() {
-			line = lipgloss.NewStyle().Foreground(clrDir).Render("  ▸ " + name + "/")
+			line = lipgloss.NewStyle().Foreground(clrDir).Render("  " + fileIconExt(catDir, "") + name + "/")
 		} else {
 			// categorise by name only (no stat for speed)
 			fakeEntry := entry{name: name, isDir: false}
 			cat := categorise(fakeEntry)
 			col := fileColor(cat)
-			line = col.Render("  " + fileIcon(cat) + name)
+			line = col.Render("  " + fileIconExt(cat, filepath.Ext(name)) + name)
 		}
 		sb.WriteString(line + "\n")
 	}
@@ -987,14 +1211,128 @@ func imagePreview(path string, width, height int) (string, bool) {
 	return rendered, true
 }
 
+// seerMarkdownStyle is a custom glamour style that renders headings without
+// markdown-symbol prefixes, keeping headers visually distinct via color/bold.
+var seerMarkdownStyle = []byte(`{
+  "document": {
+    "block_prefix": "\n",
+    "block_suffix": "\n",
+    "color": "252",
+    "margin": 1
+  },
+  "block_quote": {
+    "indent": 1,
+    "indent_token": "│ ",
+    "color": "243",
+    "italic": true
+  },
+  "paragraph": {},
+  "list": {
+    "level_indent": 2
+  },
+  "heading": {
+    "block_suffix": "\n",
+    "bold": true
+  },
+  "h1": {
+    "prefix": " ",
+    "suffix": " ",
+    "color": "228",
+    "background_color": "63",
+    "bold": true
+  },
+  "h2": {
+    "color": "117",
+    "bold": true,
+    "block_suffix": "\n"
+  },
+  "h3": {
+    "color": "147",
+    "bold": true
+  },
+  "h4": {
+    "color": "189",
+    "bold": true
+  },
+  "h5": {
+    "color": "243",
+    "bold": true
+  },
+  "h6": {
+    "color": "240",
+    "bold": false
+  },
+  "text": {},
+  "strikethrough": { "crossed_out": true },
+  "emph": { "italic": true },
+  "strong": { "bold": true },
+  "hr": {
+    "color": "240",
+    "format": "\n────────\n"
+  },
+  "item": { "block_prefix": "• " },
+  "enumeration": { "block_prefix": ". " },
+  "task": {
+    "ticked": "[✓] ",
+    "unticked": "[ ] "
+  },
+  "link": { "color": "75", "underline": true },
+  "link_text": { "color": "114", "bold": true },
+  "image": { "color": "212", "underline": true },
+  "image_text": { "color": "243", "format": "Image: {{.text}} →" },
+  "code": {
+    "prefix": " ",
+    "suffix": " ",
+    "color": "203",
+    "background_color": "236"
+  },
+  "code_block": {
+    "color": "244",
+    "margin": 2,
+    "chroma": {
+      "text": { "color": "#C4C4C4" },
+      "error": { "color": "#F1F1F1", "background_color": "#F05B5B" },
+      "comment": { "color": "#676767" },
+      "comment_preproc": { "color": "#FF875F" },
+      "keyword": { "color": "#00AAFF" },
+      "keyword_reserved": { "color": "#FF5FD2" },
+      "keyword_namespace": { "color": "#FF5F87" },
+      "keyword_type": { "color": "#6E6ED8" },
+      "operator": { "color": "#EF8080" },
+      "punctuation": { "color": "#E8E8A8" },
+      "name": { "color": "#C4C4C4" },
+      "name_builtin": { "color": "#FF8EC7" },
+      "name_tag": { "color": "#B083EA" },
+      "name_attribute": { "color": "#7A7AE6" },
+      "name_class": { "color": "#F1F1F1", "underline": true, "bold": true },
+      "name_function": { "color": "#00D787" },
+      "name_decorator": { "color": "#FFFF87" },
+      "literal_number": { "color": "#6EEFC0" },
+      "literal_string": { "color": "#C69669" },
+      "literal_string_escape": { "color": "#AFFFD7" },
+      "generic_deleted": { "color": "#FD5B5B" },
+      "generic_emph": { "italic": true },
+      "generic_inserted": { "color": "#00D787" },
+      "generic_strong": { "bold": true },
+      "generic_subheading": { "color": "#777777" },
+      "background": { "background_color": "#373737" }
+    }
+  },
+  "table": {},
+  "definition_list": {},
+  "definition_term": {},
+  "definition_description": { "block_prefix": "\n  " },
+  "html_block": {},
+  "html_span": {}
+}`)
+
 func renderMarkdownPreview(markdown string, width int, truncated bool) string {
 	prepared := replaceMermaidFences(markdown)
 	rendered := prepared
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("dark"),
+		glamour.WithStylesFromJSONBytes(seerMarkdownStyle),
 		glamour.WithWordWrap(max(24, width-3)),
 		glamour.WithTableWrap(true),
-		glamour.WithPreservedNewLines(),
 		glamour.WithEmoji(),
 	)
 	if err == nil {
@@ -1229,86 +1567,491 @@ type mermaidGraph struct {
 }
 
 func renderMermaidNative(code string) string {
-	g := parseMermaidGraph(code)
-	if len(g.edges) == 0 {
-		return "Mermaid (native preview)\n\n" + code
-	}
-
-	var sb strings.Builder
-	sb.WriteString("Mermaid (native preview)\n")
-	sb.WriteString("type: ")
-	sb.WriteString(g.chartType)
-	sb.WriteString("\n")
-	sb.WriteString("nodes: ")
-	sb.WriteString(fmt.Sprintf("%d", len(g.nodeOrder)))
-	sb.WriteString("  edges: ")
-	sb.WriteString(fmt.Sprintf("%d", len(g.edges)))
-	sb.WriteString("\n\n")
-
-	maxEdges := min(len(g.edges), 30)
-	for i := 0; i < maxEdges; i++ {
-		e := g.edges[i]
-		sb.WriteString(fmt.Sprintf("%2d. %s -> %s", i+1, fitMermaidLabel(e.from.label), fitMermaidLabel(e.to.label)))
-		if e.edgeLabel != "" {
-			sb.WriteString("  [")
-			sb.WriteString(fitMermaidLabel(e.edgeLabel))
-			sb.WriteString("]")
+	ct := mermaidChartType(code)
+	switch ct {
+	case "sequenceDiagram":
+		parts, msgs := parseSequenceDiagram(code)
+		if len(msgs) > 0 {
+			return asciiSequenceDiagram(parts, msgs, 0)
 		}
-		sb.WriteByte('\n')
+	default:
+		g := parseMermaidGraph(code)
+		if len(g.nodeOrder) > 0 {
+			return asciiFlowchart(g, 0)
+		}
 	}
-	if len(g.edges) > maxEdges {
-		sb.WriteString("... and ")
-		sb.WriteString(fmt.Sprintf("%d", len(g.edges)-maxEdges))
-		sb.WriteString(" more edges")
-	}
-
-	return strings.TrimRight(sb.String(), "\n")
+	return code
 }
 
 func renderMermaidMarkdownPreview(code string) string {
-	g := parseMermaidGraph(code)
-	if len(g.edges) == 0 {
-		return "_Mermaid block found, but no flow edges were parsed._"
+	ct := mermaidChartType(code)
+	var art string
+	switch ct {
+	case "sequenceDiagram":
+		parts, msgs := parseSequenceDiagram(code)
+		if len(msgs) > 0 {
+			art = asciiSequenceDiagram(parts, msgs, 80)
+		}
+	default:
+		g := parseMermaidGraph(code)
+		if len(g.nodeOrder) > 0 {
+			art = asciiFlowchart(g, 80)
+		}
+	}
+	if art == "" {
+		return "_Mermaid block: no diagram content parsed._"
+	}
+	return "```text\n" + art + "\n```\n"
+}
+
+func mermaidChartType(code string) string {
+	for _, line := range strings.Split(code, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "%%") {
+			continue
+		}
+		if parts := strings.Fields(trimmed); len(parts) > 0 {
+			return parts[0]
+		}
+	}
+	return "diagram"
+}
+
+// ── ASCII flowchart renderer ──────────────────────────────────────────────────
+
+// boxDrawMask maps box-drawing runes to a 4-bit NESW connectivity mask.
+// N=8 E=4 S=2 W=1 — combining masks via OR produces the correct merged character.
+var boxDrawMask = map[rune]int{
+	'│': 8 + 2, '─': 4 + 1,
+	'┌': 4 + 2, '┐': 1 + 2, '└': 8 + 4, '┘': 8 + 1,
+	'├': 8 + 4 + 2, '┤': 8 + 1 + 2, '┬': 4 + 1 + 2, '┴': 8 + 4 + 1, '┼': 15,
+}
+
+// maskBoxDraw is the reverse of boxDrawMask.
+var maskBoxDraw = map[int]rune{
+	4 + 2: '┌', 1 + 2: '┐', 8 + 4: '└', 8 + 1: '┘',
+	4 + 1: '─', 8 + 2: '│',
+	8 + 4 + 2: '├', 8 + 1 + 2: '┤', 4 + 1 + 2: '┬', 8 + 4 + 1: '┴', 15: '┼',
+	4: '╶', 1: '╴', 8: '╵', 2: '╷',
+}
+
+// asciiFlowchart renders a mermaid flowchart as an ASCII box diagram.
+func asciiFlowchart(g mermaidGraph, maxW int) string {
+	if len(g.nodeOrder) == 0 {
+		return "(empty diagram)"
+	}
+
+	labelOf := func(id string) string {
+		if l := g.nodes[id]; l != "" {
+			return l
+		}
+		return id
+	}
+	nodeBoxW := func(id string) int { return len([]rune(labelOf(id))) + 4 }
+
+	// Build adjacency and in-degree
+	succMap := make(map[string][]string)
+	tmpIn := make(map[string]int)
+	for id := range g.nodes {
+		tmpIn[id] = 0
+	}
+	for _, e := range g.edges {
+		if e.from.id == e.to.id {
+			continue
+		}
+		succMap[e.from.id] = append(succMap[e.from.id], e.to.id)
+		tmpIn[e.to.id]++
+	}
+
+	// Longest-path ranking via Kahn's algorithm
+	rank := make(map[string]int)
+	q := []string{}
+	for id := range g.nodes {
+		if tmpIn[id] == 0 {
+			q = append(q, id)
+		}
+	}
+	for len(q) > 0 {
+		cur := q[0]
+		q = q[1:]
+		for _, next := range succMap[cur] {
+			if rank[cur]+1 > rank[next] {
+				rank[next] = rank[cur] + 1
+			}
+			tmpIn[next]--
+			if tmpIn[next] == 0 {
+				q = append(q, next)
+			}
+		}
+	}
+
+	maxRank := 0
+	for _, r := range rank {
+		if r > maxRank {
+			maxRank = r
+		}
+	}
+
+	// Group nodes by rank, preserving nodeOrder within each level
+	levels := make([][]string, maxRank+1)
+	for _, id := range g.nodeOrder {
+		r := rank[id]
+		levels[r] = append(levels[r], id)
+	}
+
+	// Compute x positions within each level
+	const hGap = 3
+	nodeX := make(map[string]int)
+	levelW := make([]int, maxRank+1)
+	for r, nodes := range levels {
+		x := 0
+		for i, id := range nodes {
+			nodeX[id] = x
+			x += nodeBoxW(id)
+			if i < len(nodes)-1 {
+				x += hGap
+			}
+		}
+		levelW[r] = x
+	}
+
+	totalW := 1
+	for _, lw := range levelW {
+		if lw > totalW {
+			totalW = lw
+		}
+	}
+	if maxW > 0 && totalW > maxW {
+		totalW = maxW
+	}
+
+	// Center each level within totalW
+	for r, lw := range levelW {
+		off := (totalW - lw) / 2
+		if off < 0 {
+			off = 0
+		}
+		for _, id := range levels[r] {
+			nodeX[id] += off
+		}
+	}
+
+	// Y positions: 3 rows per box + 2 connector rows between levels
+	nodeY := make(map[string]int)
+	y := 0
+	for r, nodes := range levels {
+		for _, id := range nodes {
+			nodeY[id] = y
+		}
+		y += 3
+		if r < maxRank {
+			y += 2
+		}
+	}
+	totalH := y
+
+	// Grid
+	grid := make([][]rune, totalH)
+	for i := range grid {
+		grid[i] = make([]rune, totalW)
+		for j := range grid[i] {
+			grid[i][j] = ' '
+		}
+	}
+
+	setRaw := func(x, y int, r rune) {
+		if x >= 0 && x < totalW && y >= 0 && y < totalH {
+			grid[y][x] = r
+		}
+	}
+	// setBox merges box-drawing characters so branching connectors combine cleanly.
+	setBox := func(x, y int, r rune) {
+		if x < 0 || x >= totalW || y < 0 || y >= totalH {
+			return
+		}
+		existing := grid[y][x]
+		if existing == ' ' {
+			grid[y][x] = r
+			return
+		}
+		em, ok1 := boxDrawMask[existing]
+		nm, ok2 := boxDrawMask[r]
+		if ok1 && ok2 {
+			if merged, ok3 := maskBoxDraw[em|nm]; ok3 {
+				grid[y][x] = merged
+				return
+			}
+		}
+		grid[y][x] = r
+	}
+	writeStr := func(x, y int, s string) {
+		for i, r := range []rune(s) {
+			setRaw(x+i, y, r)
+		}
+	}
+
+	// Draw boxes
+	for id := range g.nodes {
+		label := labelOf(id)
+		x, yy, w := nodeX[id], nodeY[id], nodeBoxW(id)
+		setRaw(x, yy, '┌')
+		for i := 1; i < w-1; i++ {
+			setRaw(x+i, yy, '─')
+		}
+		setRaw(x+w-1, yy, '┐')
+		setRaw(x, yy+1, '│')
+		writeStr(x+2, yy+1, label)
+		setRaw(x+w-1, yy+1, '│')
+		setRaw(x, yy+2, '└')
+		for i := 1; i < w-1; i++ {
+			setRaw(x+i, yy+2, '─')
+		}
+		setRaw(x+w-1, yy+2, '┘')
+	}
+
+	// Draw edges between adjacent-rank nodes
+	for _, e := range g.edges {
+		fid, tid := e.from.id, e.to.id
+		if fid == tid || rank[fid]+1 != rank[tid] {
+			continue
+		}
+		fw := nodeBoxW(fid)
+		fcx := nodeX[fid] + fw/2
+		row1 := nodeY[fid] + 3 // first connector row
+
+		tw := nodeBoxW(tid)
+		tcx := nodeX[tid] + tw/2
+
+		switch {
+		case fcx == tcx:
+			// Straight down: │ then ▼
+			setBox(fcx, row1, '│')
+			setRaw(tcx, row1+1, '▼')
+		case fcx < tcx:
+			// Go right: └────┐ then ▼
+			setBox(fcx, row1, '└')
+			for x := fcx + 1; x < tcx; x++ {
+				setBox(x, row1, '─')
+			}
+			setBox(tcx, row1, '┐')
+			setRaw(tcx, row1+1, '▼')
+		default:
+			// Go left: ┌────┘ then ▼
+			setBox(tcx, row1, '┌')
+			for x := tcx + 1; x < fcx; x++ {
+				setBox(x, row1, '─')
+			}
+			setBox(fcx, row1, '┘')
+			setRaw(tcx, row1+1, '▼')
+		}
 	}
 
 	var sb strings.Builder
-	sb.WriteString("#### Mermaid Preview\n\n")
-	sb.WriteString("**Type:** `")
-	sb.WriteString(g.chartType)
-	sb.WriteString("`  \\n")
-	sb.WriteString("**Nodes:** `")
-	sb.WriteString(fmt.Sprintf("%d", len(g.nodeOrder)))
-	sb.WriteString("`  \\n")
-	sb.WriteString("**Edges:** `")
-	sb.WriteString(fmt.Sprintf("%d", len(g.edges)))
-	sb.WriteString("`\n\n")
+	for _, row := range grid {
+		sb.WriteString(strings.TrimRight(string(row), " "))
+		sb.WriteByte('\n')
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
 
-	sb.WriteString("| # | From | To | Label |\n")
-	sb.WriteString("|---:|------|----|-------|\n")
-	maxEdges := min(len(g.edges), 20)
-	for i := 0; i < maxEdges; i++ {
-		e := g.edges[i]
-		label := e.edgeLabel
-		if label == "" {
-			label = "-"
+// ── ASCII sequence diagram renderer ──────────────────────────────────────────
+
+type seqMsg struct {
+	from, to, label string
+	dashed          bool
+}
+
+func parseSequenceDiagram(code string) (participants []string, msgs []seqMsg) {
+	seen := make(map[string]bool)
+	add := func(name string) {
+		if name != "" && !seen[name] {
+			participants = append(participants, name)
+			seen[name] = true
 		}
-		sb.WriteString("| ")
-		sb.WriteString(fmt.Sprintf("%d", i+1))
-		sb.WriteString(" | ")
-		sb.WriteString(escapeMarkdownTableCell(fitMermaidLabel(e.from.label)))
-		sb.WriteString(" | ")
-		sb.WriteString(escapeMarkdownTableCell(fitMermaidLabel(e.to.label)))
-		sb.WriteString(" | ")
-		sb.WriteString(escapeMarkdownTableCell(fitMermaidLabel(label)))
-		sb.WriteString(" |\n")
 	}
-	if len(g.edges) > maxEdges {
-		sb.WriteString("\n_...and ")
-		sb.WriteString(fmt.Sprintf("%d", len(g.edges)-maxEdges))
-		sb.WriteString(" more edges._\n")
+	for _, line := range strings.Split(code, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "%%") {
+			continue
+		}
+		lower := strings.ToLower(t)
+		if strings.HasPrefix(lower, "participant ") || strings.HasPrefix(lower, "actor ") {
+			fields := strings.Fields(t)
+			if len(fields) < 2 {
+				continue
+			}
+			name := fields[1]
+			for i, f := range fields {
+				if strings.EqualFold(f, "as") && i+1 < len(fields) {
+					name = strings.Join(fields[i+1:], " ")
+					break
+				}
+			}
+			add(name)
+			continue
+		}
+		// Message arrows – check in order of decreasing length to avoid mis-matching
+		for _, op := range []struct {
+			s      string
+			dashed bool
+		}{
+			{"-->>", true}, {"-->", true}, {"->>", false}, {"->", false},
+			{"--x", true}, {"-x", false}, {"--)", true}, {"-)", false},
+		} {
+			idx := strings.Index(t, op.s)
+			if idx < 0 {
+				continue
+			}
+			from := strings.TrimSpace(t[:idx])
+			rest := strings.TrimSpace(t[idx+len(op.s):])
+			to, label := rest, ""
+			if ci := strings.Index(rest, ":"); ci >= 0 {
+				to = strings.TrimSpace(rest[:ci])
+				label = strings.TrimSpace(rest[ci+1:])
+			}
+			if from == "" || to == "" {
+				break
+			}
+			add(from)
+			add(to)
+			msgs = append(msgs, seqMsg{from: from, to: to, label: label, dashed: op.dashed})
+			break
+		}
+	}
+	return
+}
+
+func asciiSequenceDiagram(participants []string, msgs []seqMsg, maxW int) string {
+	if len(participants) == 0 {
+		return "(no participants)"
 	}
 
-	return sb.String()
+	// Column width: participant name + 2 spaces padding, minimum 14, even
+	colW := 14
+	for _, p := range participants {
+		if w := len(p) + 4; w > colW {
+			colW = w
+		}
+	}
+	if colW%2 != 0 {
+		colW++
+	}
+
+	colIdx := make(map[string]int)
+	for i, p := range participants {
+		colIdx[p] = i
+	}
+	n := len(participants)
+	totalW := n * colW
+	if maxW > 0 && totalW > maxW {
+		totalW = maxW
+	}
+
+	centerOf := func(i int) int { return i*colW + colW/2 }
+
+	var sb strings.Builder
+
+	// Participant header row
+	for _, p := range participants {
+		name := p
+		if len(name) > colW-2 {
+			name = name[:colW-2]
+		}
+		pad := (colW - len(name)) / 2
+		sb.WriteString(strings.Repeat(" ", pad))
+		sb.WriteString(name)
+		sb.WriteString(strings.Repeat(" ", colW-pad-len(name)))
+	}
+	sb.WriteByte('\n')
+
+	// Lifeline header
+	lifeline := func() []rune {
+		row := make([]rune, totalW)
+		for i := range row {
+			row[i] = ' '
+		}
+		for i := range participants {
+			if cx := centerOf(i); cx < totalW {
+				row[cx] = '│'
+			}
+		}
+		return row
+	}
+	sb.WriteString(strings.TrimRight(string(lifeline()), " ") + "\n")
+
+	lineChar := func(dashed bool) rune {
+		if dashed {
+			return '╌'
+		}
+		return '─'
+	}
+
+	for _, msg := range msgs {
+		fi, ok1 := colIdx[msg.from]
+		ti, ok2 := colIdx[msg.to]
+		if !ok1 || !ok2 {
+			continue
+		}
+
+		row := lifeline()
+		fcx := centerOf(fi)
+		tcx := centerOf(ti)
+
+		if fi == ti {
+			// Self-arrow
+			lx := fcx + 1
+			label := "↩"
+			if msg.label != "" {
+				label += " " + msg.label
+			}
+			for i, r := range []rune(label) {
+				if lx+i < totalW {
+					row[lx+i] = r
+				}
+			}
+		} else {
+			goRight := fi < ti
+			lx, rx := fcx, tcx
+			if !goRight {
+				lx, rx = tcx, fcx
+			}
+			lc := lineChar(msg.dashed)
+			for x := lx + 1; x < rx; x++ {
+				if x < totalW {
+					row[x] = lc
+				}
+			}
+			if goRight {
+				if rx < totalW {
+					row[rx] = '►'
+				}
+			} else {
+				if lx < totalW {
+					row[lx] = '◄'
+				}
+			}
+			// Place label centred on the arrow
+			if msg.label != "" {
+				label := " " + msg.label + " "
+				lrunes := []rune(label)
+				lw := len(lrunes)
+				mid := lx + (rx-lx-lw)/2 + 1
+				if mid < lx+1 {
+					mid = lx + 1
+				}
+				for i, r := range lrunes {
+					if mid+i > lx && mid+i < rx && mid+i < totalW {
+						row[mid+i] = r
+					}
+				}
+			}
+		}
+
+		sb.WriteString(strings.TrimRight(string(row), " ") + "\n")
+		sb.WriteString(strings.TrimRight(string(lifeline()), " ") + "\n")
+	}
+
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 func parseMermaidGraph(code string) mermaidGraph {
@@ -1388,8 +2131,9 @@ func parseMermaidNode(raw string) mermaidNode {
 	}
 	raw = strings.Split(raw, ":::")[0]
 
-	openToClose := map[byte]byte{'[': ']', '(': ')', '{': '}'}
-	for open, close := range openToClose {
+	// Fixed iteration order so parsing is deterministic regardless of map randomisation.
+	for _, pair := range [3][2]byte{{'[', ']'}, {'(', ')'}, {'{', '}'}} {
+		open, close := pair[0], pair[1]
 		if i := strings.IndexByte(raw, open); i > 0 {
 			id := strings.TrimSpace(raw[:i])
 			if j := strings.LastIndexByte(raw, close); j > i {
@@ -1419,10 +2163,11 @@ func registerMermaidNode(nodes map[string]string, order *[]string, n mermaidNode
 	}
 }
 
+var mermaidTextReplacer = strings.NewReplacer("\"", "", "'", "", "|", " ", "`", "")
+
 func cleanMermaidText(in string) string {
 	in = strings.TrimSpace(in)
-	replacer := strings.NewReplacer("\"", "", "'", "", "|", " ", "`", "")
-	in = replacer.Replace(in)
+	in = mermaidTextReplacer.Replace(in)
 	in = strings.Join(strings.Fields(in), " ")
 	return in
 }
@@ -1548,14 +2293,24 @@ func trimToWidth(s string, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= width {
+	if lipgloss.Width(s) <= width {
 		return s
 	}
-	if width <= 1 {
-		return string(runes[:1])
+	// Walk runes accumulating visual width, same approach as trimVisual.
+	runes := []rune(s)
+	var out []rune
+	w := 0
+	ellipsisW := lipgloss.Width("…")
+	budget := width - ellipsisW
+	for _, r := range runes {
+		rw := lipgloss.Width(string(r))
+		if w+rw > budget {
+			break
+		}
+		out = append(out, r)
+		w += rw
 	}
-	return string(runes[:width-1]) + "…"
+	return string(out) + "…"
 }
 
 func humanSize(n int64) string {
