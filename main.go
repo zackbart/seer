@@ -345,10 +345,14 @@ func (m model) View() string {
 	leftPane := m.renderFileList(leftW, bodyH)
 
 	// ── vertical separator ────────────────────────────────────────────────────
+	// Render each │ independently so ANSI reset codes don't span newlines.
 	sepStyle := lipgloss.NewStyle().Foreground(clrBorder)
-	sep := sepStyle.Render(strings.Repeat("│\n", bodyH))
-	// trim trailing newline so JoinHorizontal aligns cleanly
-	sep = strings.TrimRight(sep, "\n")
+	sepLine := sepStyle.Render("│")
+	sepLines := make([]string, bodyH)
+	for i := range sepLines {
+		sepLines[i] = sepLine
+	}
+	sep := strings.Join(sepLines, "\n")
 
 	// ── right pane: preview ───────────────────────────────────────────────────
 	rightPane := m.renderPreviewPane(rightW, bodyH)
@@ -362,11 +366,26 @@ func (m model) View() string {
 
 // renderTopBar draws the full-width breadcrumb path bar.
 func (m model) renderTopBar(width int) string {
-	// Build breadcrumb segments from cwd
-	parts := strings.Split(m.cwd, string(filepath.Separator))
 	sepStyle := lipgloss.NewStyle().Foreground(clrPathSep)
 	segStyle := lipgloss.NewStyle().Foreground(clrBreadcrumb)
+	countStyle := lipgloss.NewStyle().Foreground(clrMuted)
 
+	// Right side: entry count (rendered first so we know its width)
+	count := fmt.Sprintf("%d items", len(m.entries))
+	if m.showHidden {
+		count += " (hidden shown)"
+	}
+	rawCount := countStyle.Render(count)
+	countW := lipgloss.Width(rawCount)
+
+	// Available width for breadcrumb: total - 1 left padding - 1 space before count - countW
+	breadcrumbBudget := width - 1 - 1 - countW
+	if breadcrumbBudget < 4 {
+		breadcrumbBudget = 4
+	}
+
+	// Build breadcrumb segments, then truncate from the left if too long
+	parts := strings.Split(m.cwd, string(filepath.Separator))
 	var segments []string
 	for i, p := range parts {
 		if p == "" {
@@ -382,28 +401,46 @@ func (m model) renderTopBar(width int) string {
 	}
 	breadcrumb := strings.Join(segments, "")
 
-	// Right side: entry count
-	count := fmt.Sprintf("%d items", len(m.entries))
-	if m.showHidden {
-		count += " (hidden shown)"
+	// If breadcrumb is too wide, show only the last N path components that fit
+	if lipgloss.Width(breadcrumb) > breadcrumbBudget {
+		ellipsis := sepStyle.Render("…")
+		ellipsisW := lipgloss.Width(ellipsis)
+		// Walk from the end adding components until we run out of budget
+		var kept []string
+		budget := breadcrumbBudget - ellipsisW - lipgloss.Width(sepStyle.Render(" › "))
+		for i := len(parts) - 1; i >= 0; i-- {
+			if parts[i] == "" {
+				continue
+			}
+			seg := segStyle.Render(parts[i])
+			if len(kept) > 0 {
+				budget -= lipgloss.Width(sepStyle.Render(" › "))
+			}
+			budget -= lipgloss.Width(seg)
+			if budget < 0 {
+				break
+			}
+			kept = append([]string{seg}, kept...)
+		}
+		if len(kept) == 0 {
+			kept = []string{segStyle.Render(parts[len(parts)-1])}
+		}
+		breadcrumb = ellipsis + sepStyle.Render(" › ") + strings.Join(kept, sepStyle.Render(" › "))
 	}
-	countStyle := lipgloss.NewStyle().Foreground(clrMuted)
 
-	// Compose: breadcrumb left, count right
-	rawCount := countStyle.Render(count)
-	rawBreadcrumb := breadcrumb
+	// Compose bar: breadcrumb left, count right
+	breadcrumbW := lipgloss.Width(breadcrumb)
+	gap := width - 1 - breadcrumbW - countW // 1 = left padding
+	if gap < 1 {
+		gap = 1
+	}
+	inner := breadcrumb + strings.Repeat(" ", gap) + rawCount
 
-	// Breadcrumb left, item count right-aligned
-	bar := lipgloss.NewStyle().
+	return lipgloss.NewStyle().
 		Width(width).
 		Background(clrDim).
 		PaddingLeft(1).
-		Render(rawBreadcrumb + lipgloss.NewStyle().
-			Width(width-lipgloss.Width(rawBreadcrumb)-2).
-			Align(lipgloss.Right).
-			Background(clrDim).
-			Render(rawCount))
-	return bar
+		Render(inner)
 }
 
 // renderFileList draws the left pane with icons, names, sizes, and mod times.
@@ -432,19 +469,44 @@ func (m model) renderFileList(w, h int) string {
 	if len(m.entries) == 0 {
 		lines = append(lines, mutedStyle.Render("  (empty directory)"))
 	} else {
-		// Determine visible window around selection
-		listH := h - 2 // subtract title + divider rows
+		scrollStyle := lipgloss.NewStyle().Foreground(clrScrollbar)
+
+		// Total rows available for file rows + scroll indicators (title+divider already added)
+		listH := h - 2
 		if listH < 1 {
 			listH = 1
 		}
-		start, end := visibleWindow(m.selected, len(m.entries), listH)
 
-		// Scroll indicator at the top if not at beginning
-		if start > 0 {
-			scrollStyle := lipgloss.NewStyle().Foreground(clrScrollbar)
+		// First pass: compute window assuming no indicators
+		start, end := visibleWindow(m.selected, len(m.entries), listH)
+		needTop := start > 0
+		needBot := end < len(m.entries)
+
+		// If indicators are needed, shrink the window to make room for them.
+		// We may need to do this iteratively (showing top indicator can reveal bottom need).
+		for {
+			capacity := listH
+			if needTop {
+				capacity--
+			}
+			if needBot {
+				capacity--
+			}
+			if capacity < 1 {
+				capacity = 1
+			}
+			start, end = visibleWindow(m.selected, len(m.entries), capacity)
+			newNeedTop := start > 0
+			newNeedBot := end < len(m.entries)
+			if newNeedTop == needTop && newNeedBot == needBot {
+				break
+			}
+			needTop = newNeedTop
+			needBot = newNeedBot
+		}
+
+		if needTop {
 			lines = append(lines, scrollStyle.Render(fmt.Sprintf("  ↑ %d more", start)))
-			listH--
-			end = min(start+listH, len(m.entries))
 		}
 
 		for i := start; i < end; i++ {
@@ -453,14 +515,11 @@ func (m model) renderFileList(w, h int) string {
 			icon := fileIcon(cat)
 			colStyle := fileColor(cat)
 
-			// Render name with icon
 			displayName := e.name
 			if e.isDir {
 				displayName = e.name + "/"
 			}
 			rawEntry := icon + displayName
-			// truncate name portion
-			nameField := trimToWidth(rawEntry, nameW)
 
 			// Size field – right-aligned in sizeW columns
 			sizeStr := ""
@@ -470,28 +529,30 @@ func (m model) renderFileList(w, h int) string {
 			sizeField := fmt.Sprintf("%*s", sizeW, sizeStr)
 
 			if i == m.selected {
-				// Selected row: full-width highlight
+				// Selected row: full-width highlight using visual width
 				selBg := lipgloss.NewStyle().
 					Foreground(clrAccentFg).
 					Background(clrAccent).
 					Bold(true)
-				row := selBg.Render(padRight(rawEntry, w-sizeW-1) + lipgloss.NewStyle().
-					Foreground(clrAccentFg).
-					Background(clrAccent).
-					Render(sizeField))
+				// Measure the raw visual width of icon+name, pad to fill name column
+				entryVisW := lipgloss.Width(rawEntry)
+				nameColW := w - sizeW
+				padding := ""
+				if entryVisW < nameColW {
+					padding = strings.Repeat(" ", nameColW-entryVisW)
+				}
+				namepart := trimVisual(rawEntry, nameColW)
+				row := selBg.Render(namepart + padding + sizeField)
 				lines = append(lines, row)
 			} else {
-				// Normal row
+				nameField := trimVisual(rawEntry, nameW)
 				namePart := colStyle.Render(nameField)
 				sizePart := lipgloss.NewStyle().Foreground(clrSize).Render(sizeField)
-				row := namePart + sizePart
-				lines = append(lines, row)
+				lines = append(lines, namePart+sizePart)
 			}
 		}
 
-		// Scroll indicator at bottom if not at end
-		if end < len(m.entries) {
-			scrollStyle := lipgloss.NewStyle().Foreground(clrScrollbar)
+		if needBot {
 			lines = append(lines, scrollStyle.Render(fmt.Sprintf("  ↓ %d more", len(m.entries)-end)))
 		}
 	}
@@ -561,13 +622,22 @@ func (m model) renderPreviewPane(w, h int) string {
 		previewBody = lipgloss.NewStyle().Foreground(clrLoading).Render("  loading preview…")
 	}
 
-	sliced := m.slicePreview(previewBody, previewH)
-	// Scroll position indicator
+	// Reserve one row for the scroll indicator when scrolled
+	contentH := previewH
+	var scrollIndicator string
 	if m.previewOffset > 0 {
-		scrollInfo := lipgloss.NewStyle().Foreground(clrScrollbar).Render(
+		contentH--
+		scrollIndicator = lipgloss.NewStyle().Foreground(clrScrollbar).Render(
 			fmt.Sprintf("  ↑ line %d", m.previewOffset+1),
 		)
-		sliced = scrollInfo + "\n" + sliced
+	}
+	if contentH < 1 {
+		contentH = 1
+	}
+
+	sliced := m.slicePreview(previewBody, contentH)
+	if scrollIndicator != "" {
+		sliced = scrollIndicator + "\n" + sliced
 	}
 
 	body := lipgloss.NewStyle().Width(w).Height(previewH).Render(sliced)
@@ -585,6 +655,12 @@ func (m model) renderBottomBar(width int) string {
 		statusIcon = "◆"
 		statusStyle = lipgloss.NewStyle().Foreground(clrExec)
 	}
+	// Clamp status text so it never forces a line wrap
+	maxStatusW := width - 3 // 1 pad + 1 icon + 1 space
+	if maxStatusW < 1 {
+		maxStatusW = 1
+	}
+	statusText = trimVisual(statusText, maxStatusW)
 	statusLine := lipgloss.NewStyle().
 		Width(width).
 		Background(clrDim).
@@ -608,13 +684,28 @@ func (m model) renderBottomBar(width int) string {
 	descStyle := lipgloss.NewStyle().Foreground(clrHintText)
 	sepStyle := lipgloss.NewStyle().Foreground(clrDim)
 
+	// Build hints left-to-right, stopping before we'd overflow the terminal width.
+	// Budget: width - 1 (left padding) - 1 (safety margin)
+	hintBudget := width - 2
+	dotW := lipgloss.Width(sepStyle.Render("  ·  "))
 	var parts []string
+	used := 0
 	for i, h := range hints {
 		seg := keyStyle.Render(h.key) + descStyle.Render(" "+h.desc)
-		parts = append(parts, seg)
-		if i < len(hints)-1 {
-			parts = append(parts, sepStyle.Render("  ·  "))
+		segW := lipgloss.Width(seg)
+		extra := 0
+		if i > 0 {
+			extra = dotW
 		}
+		if used+extra+segW > hintBudget {
+			break
+		}
+		if i > 0 {
+			parts = append(parts, sepStyle.Render("  ·  "))
+			used += dotW
+		}
+		parts = append(parts, seg)
+		used += segW
 	}
 	keysLine := lipgloss.NewStyle().
 		Width(width).
@@ -646,11 +737,36 @@ func visibleWindow(selected, total, height int) (int, int) {
 	return start, end
 }
 
-// padRight pads or truncates s to exactly n visible chars.
+// trimVisual truncates s to at most n visible terminal columns, appending "…"
+// if truncated. Uses lipgloss.Width for accurate multi-byte / ANSI measurement.
+func trimVisual(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= n {
+		return s
+	}
+	// Walk runes, accumulating visual width until we exceed budget
+	runes := []rune(s)
+	var sb strings.Builder
+	used := 0
+	for _, r := range runes {
+		rw := lipgloss.Width(string(r))
+		if used+rw > n-1 { // leave 1 cell for the ellipsis
+			sb.WriteRune('…')
+			break
+		}
+		sb.WriteRune(r)
+		used += rw
+	}
+	return sb.String()
+}
+
+// padRight pads or truncates s to exactly n visible terminal columns.
 func padRight(s string, n int) string {
 	w := lipgloss.Width(s)
 	if w >= n {
-		return trimToWidth(s, n)
+		return trimVisual(s, n)
 	}
 	return s + strings.Repeat(" ", n-w)
 }
