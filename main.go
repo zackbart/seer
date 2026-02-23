@@ -29,6 +29,31 @@ const (
 	maxDirPreview   = 40
 )
 
+// ── color palette ──────────────────────────────────────────────────────────────
+// A cohesive dark theme built around deep indigo / slate tones.
+var (
+	clrAccent     = lipgloss.Color("105") // soft violet – selected bg accent
+	clrAccentFg   = lipgloss.Color("231") // near-white text on accent bg
+	clrDir        = lipgloss.Color("75")  // sky blue – directories
+	clrExec       = lipgloss.Color("114") // sage green – executables / scripts
+	clrMedia      = lipgloss.Color("215") // warm amber – images / media
+	clrDoc        = lipgloss.Color("189") // light lavender – markdown / docs
+	clrConfig     = lipgloss.Color("222") // pale gold – config files
+	clrBinary     = lipgloss.Color("203") // coral – binary / unknown
+	clrSize       = lipgloss.Color("244") // medium grey – file sizes
+	clrMuted      = lipgloss.Color("240") // dark grey – decorative / dividers
+	clrDim        = lipgloss.Color("238") // very dark grey – subtle bg hints
+	clrBreadcrumb = lipgloss.Color("147") // periwinkle – path text
+	clrPathSep    = lipgloss.Color("238") // dimmer – path separators
+	clrHintKey    = lipgloss.Color("105") // violet – keybind keys
+	clrHintText   = lipgloss.Color("244") // grey – keybind descriptions
+	clrStatus     = lipgloss.Color("189") // lavender – status messages
+	clrBorder     = lipgloss.Color("237") // subtle – separator line
+	clrTitle      = lipgloss.Color("147") // periwinkle – panel titles
+	clrLoading    = lipgloss.Color("214") // orange – loading indicator
+	clrScrollbar  = lipgloss.Color("99")  // muted violet – scroll indicator
+)
+
 var imageExts = map[string]bool{
 	".png":  true,
 	".jpg":  true,
@@ -38,6 +63,85 @@ var imageExts = map[string]bool{
 	".bmp":  true,
 	".tiff": true,
 	".svg":  true,
+}
+
+// fileCategory returns a broad category for an entry used to pick colour/icon.
+type fileCategory int
+
+const (
+	catDir fileCategory = iota
+	catImage
+	catDoc
+	catCode
+	catConfig
+	catExec
+	catBinary
+	catOther
+)
+
+func categorise(e entry) fileCategory {
+	if e.isDir {
+		return catDir
+	}
+	ext := strings.ToLower(filepath.Ext(e.name))
+	switch ext {
+	case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".svg":
+		return catImage
+	case ".md", ".markdown", ".mdx", ".rst", ".txt":
+		return catDoc
+	case ".go", ".js", ".ts", ".jsx", ".tsx", ".py", ".rb", ".rs", ".c", ".cpp",
+		".h", ".java", ".cs", ".php", ".swift", ".kt", ".sh", ".bash", ".zsh",
+		".fish", ".lua", ".ex", ".exs", ".hs", ".ml", ".mli", ".clj", ".scala",
+		".vim", ".mmd", ".mermaid":
+		return catCode
+	case ".json", ".yaml", ".yml", ".toml", ".ini", ".env", ".conf", ".config",
+		".xml", ".dockerignore", ".gitignore", ".editorconfig", ".eslintrc",
+		".prettierrc", ".babelrc", ".nvmrc":
+		return catConfig
+	}
+	return catOther
+}
+
+func fileIcon(cat fileCategory) string {
+	switch cat {
+	case catDir:
+		return "▸ "
+	case catImage:
+		return "⬡ "
+	case catDoc:
+		return "≡ "
+	case catCode:
+		return "⟨⟩ "
+	case catConfig:
+		return "⚙ "
+	case catExec:
+		return "⚡ "
+	case catBinary:
+		return "⬟ "
+	default:
+		return "· "
+	}
+}
+
+func fileColor(cat fileCategory) lipgloss.Style {
+	switch cat {
+	case catDir:
+		return lipgloss.NewStyle().Foreground(clrDir).Bold(true)
+	case catImage:
+		return lipgloss.NewStyle().Foreground(clrMedia)
+	case catDoc:
+		return lipgloss.NewStyle().Foreground(clrDoc)
+	case catCode:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("231"))
+	case catConfig:
+		return lipgloss.NewStyle().Foreground(clrConfig)
+	case catExec:
+		return lipgloss.NewStyle().Foreground(clrExec)
+	case catBinary:
+		return lipgloss.NewStyle().Foreground(clrBinary)
+	default:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	}
 }
 
 type entry struct {
@@ -220,76 +324,342 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// ── View ───────────────────────────────────────────────────────────────────────
+
 func (m model) View() string {
 	if m.width == 0 || m.height == 0 {
-		return "loading..."
+		return lipgloss.NewStyle().Foreground(clrLoading).Render("loading…")
 	}
 
-	leftW := max(24, m.width/3)
-	rightW := m.width - leftW - 1
-	bodyH := max(4, m.height-2)
+	// ── dimensions ──────────────────────────────────────────────────────────
+	leftW := max(26, m.width/3)
+	rightW := m.width - leftW - 1 // -1 for the vertical separator column
+	// Reserve rows: 1 top-bar + 1 divider + 1 status + 1 keys = 4 chrome rows
+	bodyH := max(4, m.height-4)
 
-	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true)
-	mutedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
-	selectStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Bold(true)
-	dirStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("111"))
+	// ── top bar: breadcrumb path ─────────────────────────────────────────────
+	topBar := m.renderTopBar(m.width)
 
-	var listLines []string
-	listLines = append(listLines, headerStyle.Render(trimToWidth(m.cwd, leftW)))
-	listLines = append(listLines, mutedStyle.Render(strings.Repeat("-", max(1, leftW-1))))
+	// ── left pane: file list ─────────────────────────────────────────────────
+	leftPane := m.renderFileList(leftW, bodyH)
+
+	// ── vertical separator ────────────────────────────────────────────────────
+	sepStyle := lipgloss.NewStyle().Foreground(clrBorder)
+	sep := sepStyle.Render(strings.Repeat("│\n", bodyH))
+	// trim trailing newline so JoinHorizontal aligns cleanly
+	sep = strings.TrimRight(sep, "\n")
+
+	// ── right pane: preview ───────────────────────────────────────────────────
+	rightPane := m.renderPreviewPane(rightW, bodyH)
+
+	// ── bottom bar ────────────────────────────────────────────────────────────
+	bottomBar := m.renderBottomBar(m.width)
+
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, sep, rightPane)
+	return topBar + "\n" + body + "\n" + bottomBar
+}
+
+// renderTopBar draws the full-width breadcrumb path bar.
+func (m model) renderTopBar(width int) string {
+	// Build breadcrumb segments from cwd
+	parts := strings.Split(m.cwd, string(filepath.Separator))
+	sepStyle := lipgloss.NewStyle().Foreground(clrPathSep)
+	segStyle := lipgloss.NewStyle().Foreground(clrBreadcrumb)
+
+	var segments []string
+	for i, p := range parts {
+		if p == "" {
+			if i == 0 {
+				segments = append(segments, segStyle.Render("/"))
+			}
+			continue
+		}
+		if i > 0 {
+			segments = append(segments, sepStyle.Render(" › "))
+		}
+		segments = append(segments, segStyle.Render(p))
+	}
+	breadcrumb := strings.Join(segments, "")
+
+	// Right side: entry count
+	count := fmt.Sprintf("%d items", len(m.entries))
+	if m.showHidden {
+		count += " (hidden shown)"
+	}
+	countStyle := lipgloss.NewStyle().Foreground(clrMuted)
+
+	// Compose: breadcrumb left, count right
+	rawCount := countStyle.Render(count)
+	rawBreadcrumb := breadcrumb
+
+	// Breadcrumb left, item count right-aligned
+	bar := lipgloss.NewStyle().
+		Width(width).
+		Background(clrDim).
+		PaddingLeft(1).
+		Render(rawBreadcrumb + lipgloss.NewStyle().
+			Width(width-lipgloss.Width(rawBreadcrumb)-2).
+			Align(lipgloss.Right).
+			Background(clrDim).
+			Render(rawCount))
+	return bar
+}
+
+// renderFileList draws the left pane with icons, names, sizes, and mod times.
+func (m model) renderFileList(w, h int) string {
+	// Column layout within the left pane:
+	//   [icon+name ............ size  ]
+	// Size column is 7 chars wide, separated by a space.
+	sizeW := 7
+	nameW := max(8, w-sizeW-1)
+
+	mutedStyle := lipgloss.NewStyle().Foreground(clrMuted)
+	dimStyle := lipgloss.NewStyle().Foreground(clrDim)
+
+	lines := make([]string, 0, h)
+
+	// Panel title
+	titleStyle := lipgloss.NewStyle().Foreground(clrTitle).Bold(true)
+	title := titleStyle.Render("files")
+	titleLine := lipgloss.NewStyle().Width(w).Background(clrDim).PaddingLeft(1).Render(title)
+	lines = append(lines, titleLine)
+
+	// Divider
+	divider := dimStyle.Render(strings.Repeat("─", max(1, w)))
+	lines = append(lines, divider)
 
 	if len(m.entries) == 0 {
-		listLines = append(listLines, mutedStyle.Render("(empty directory)"))
+		lines = append(lines, mutedStyle.Render("  (empty directory)"))
 	} else {
-		for i, e := range m.entries {
-			name := e.name
+		// Determine visible window around selection
+		listH := h - 2 // subtract title + divider rows
+		if listH < 1 {
+			listH = 1
+		}
+		start, end := visibleWindow(m.selected, len(m.entries), listH)
+
+		// Scroll indicator at the top if not at beginning
+		if start > 0 {
+			scrollStyle := lipgloss.NewStyle().Foreground(clrScrollbar)
+			lines = append(lines, scrollStyle.Render(fmt.Sprintf("  ↑ %d more", start)))
+			listH--
+			end = min(start+listH, len(m.entries))
+		}
+
+		for i := start; i < end; i++ {
+			e := m.entries[i]
+			cat := categorise(e)
+			icon := fileIcon(cat)
+			colStyle := fileColor(cat)
+
+			// Render name with icon
+			displayName := e.name
 			if e.isDir {
-				name = dirStyle.Render(name + "/")
+				displayName = e.name + "/"
 			}
-			line := trimToWidth(name, leftW)
+			rawEntry := icon + displayName
+			// truncate name portion
+			nameField := trimToWidth(rawEntry, nameW)
+
+			// Size field – right-aligned in sizeW columns
+			sizeStr := ""
+			if !e.isDir {
+				sizeStr = humanSize(e.size)
+			}
+			sizeField := fmt.Sprintf("%*s", sizeW, sizeStr)
+
 			if i == m.selected {
-				line = selectStyle.Render(trimToWidth(rawName(e), leftW))
+				// Selected row: full-width highlight
+				selBg := lipgloss.NewStyle().
+					Foreground(clrAccentFg).
+					Background(clrAccent).
+					Bold(true)
+				row := selBg.Render(padRight(rawEntry, w-sizeW-1) + lipgloss.NewStyle().
+					Foreground(clrAccentFg).
+					Background(clrAccent).
+					Render(sizeField))
+				lines = append(lines, row)
+			} else {
+				// Normal row
+				namePart := colStyle.Render(nameField)
+				sizePart := lipgloss.NewStyle().Foreground(clrSize).Render(sizeField)
+				row := namePart + sizePart
+				lines = append(lines, row)
 			}
-			listLines = append(listLines, line)
+		}
+
+		// Scroll indicator at bottom if not at end
+		if end < len(m.entries) {
+			scrollStyle := lipgloss.NewStyle().Foreground(clrScrollbar)
+			lines = append(lines, scrollStyle.Render(fmt.Sprintf("  ↓ %d more", len(m.entries)-end)))
 		}
 	}
 
-	list := lipgloss.NewStyle().Width(leftW).Height(bodyH).Render(strings.Join(listLines, "\n"))
-
-	previewTitle := "preview"
-	if len(m.entries) > 0 {
-		previewTitle = m.entries[m.selected].name
-	}
-	if m.loading {
-		previewTitle += " (loading...)"
-	}
-
-	previewStyle := lipgloss.NewStyle().Width(rightW).Height(max(1, bodyH-2))
-	previewHeader := headerStyle.Render(trimToWidth(previewTitle, rightW))
-	previewDivider := mutedStyle.Render(strings.Repeat("-", max(1, rightW-1)))
-	previewBody := m.preview
-	if previewBody == "" {
-		previewBody = mutedStyle.Render("(no preview)")
-	}
-	previewBody = previewStyle.Render(m.slicePreview(previewBody, bodyH-2))
-
-	statusLine := mutedStyle.Render(trimToWidth(m.status, m.width))
-	controlsLine := mutedStyle.Render(trimToWidth(controlLegend(), m.width))
-
-	body := lipgloss.JoinHorizontal(lipgloss.Top, list, previewHeader+"\n"+previewDivider+"\n"+previewBody)
-	return body + "\n" + statusLine + "\n" + controlsLine
+	pane := lipgloss.NewStyle().Width(w).Height(h).Render(strings.Join(lines, "\n"))
+	return pane
 }
 
-func controlLegend() string {
-	return "j/k or up/down move  g/G home/end  enter/l open  h/backspace up  . hidden  ctrl+d/u scroll preview  trackpad/mouse wheel scroll preview  r reload  q quit"
+// renderPreviewPane draws the right pane with header and preview content.
+func (m model) renderPreviewPane(w, h int) string {
+	dimStyle := lipgloss.NewStyle().Foreground(clrDim)
+	mutedStyle := lipgloss.NewStyle().Foreground(clrMuted)
+
+	// ── header row ──────────────────────────────────────────────────────────
+	var headerLeft, headerRight string
+	if len(m.entries) > 0 {
+		e := m.entries[m.selected]
+		cat := categorise(e)
+		icon := fileIcon(cat)
+		col := fileColor(cat)
+
+		name := icon + e.name
+		if e.isDir {
+			name = icon + e.name + "/"
+		}
+		headerLeft = col.Bold(true).Render(trimToWidth(name, w/2))
+
+		// Right side metadata
+		meta := ""
+		if !e.isDir {
+			meta = humanSize(e.size) + "  " + e.modTime.Format("Jan 02 15:04")
+		} else {
+			meta = e.modTime.Format("Jan 02 15:04")
+		}
+		if m.loading {
+			meta = lipgloss.NewStyle().Foreground(clrLoading).Render("loading…")
+		}
+		headerRight = mutedStyle.Render(meta)
+	} else {
+		headerLeft = mutedStyle.Render("no selection")
+	}
+
+	// Compose header line
+	headerLineStyle := lipgloss.NewStyle().Width(w).Background(clrDim).PaddingLeft(1)
+	gap := w - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight) - 2 // 2 for padding
+	if gap < 1 {
+		gap = 1
+	}
+	headerLine := headerLineStyle.Render(
+		headerLeft + strings.Repeat(" ", gap) + headerRight,
+	)
+
+	// ── divider ──────────────────────────────────────────────────────────────
+	divider := dimStyle.Render(strings.Repeat("─", max(1, w)))
+
+	// ── preview body ─────────────────────────────────────────────────────────
+	previewH := h - 2 // subtract header + divider
+	if previewH < 1 {
+		previewH = 1
+	}
+
+	previewBody := m.preview
+	if previewBody == "" && !m.loading {
+		previewBody = mutedStyle.Render("  (no preview available)")
+	}
+	if m.loading {
+		previewBody = lipgloss.NewStyle().Foreground(clrLoading).Render("  loading preview…")
+	}
+
+	sliced := m.slicePreview(previewBody, previewH)
+	// Scroll position indicator
+	if m.previewOffset > 0 {
+		scrollInfo := lipgloss.NewStyle().Foreground(clrScrollbar).Render(
+			fmt.Sprintf("  ↑ line %d", m.previewOffset+1),
+		)
+		sliced = scrollInfo + "\n" + sliced
+	}
+
+	body := lipgloss.NewStyle().Width(w).Height(previewH).Render(sliced)
+
+	return headerLine + "\n" + divider + "\n" + body
+}
+
+// renderBottomBar draws the two-line footer: status + keybindings.
+func (m model) renderBottomBar(width int) string {
+	// ── status line ──────────────────────────────────────────────────────────
+	statusIcon := "●"
+	statusStyle := lipgloss.NewStyle().Foreground(clrStatus)
+	statusText := m.status
+	if statusText == "ready" {
+		statusIcon = "◆"
+		statusStyle = lipgloss.NewStyle().Foreground(clrExec)
+	}
+	statusLine := lipgloss.NewStyle().
+		Width(width).
+		Background(clrDim).
+		PaddingLeft(1).
+		Render(statusStyle.Render(statusIcon + " " + statusText))
+
+	// ── key hints ────────────────────────────────────────────────────────────
+	type hint struct{ key, desc string }
+	hints := []hint{
+		{"j/k", "move"},
+		{"g/G", "top/end"},
+		{"enter/l", "open"},
+		{"h", "up"},
+		{".", "hidden"},
+		{"^d/u", "scroll"},
+		{"r", "reload"},
+		{"q", "quit"},
+	}
+
+	keyStyle := lipgloss.NewStyle().Foreground(clrHintKey).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(clrHintText)
+	sepStyle := lipgloss.NewStyle().Foreground(clrDim)
+
+	var parts []string
+	for i, h := range hints {
+		seg := keyStyle.Render(h.key) + descStyle.Render(" "+h.desc)
+		parts = append(parts, seg)
+		if i < len(hints)-1 {
+			parts = append(parts, sepStyle.Render("  ·  "))
+		}
+	}
+	keysLine := lipgloss.NewStyle().
+		Width(width).
+		Background(clrDim).
+		PaddingLeft(1).
+		Render(strings.Join(parts, ""))
+
+	return statusLine + "\n" + keysLine
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────────
+
+// visibleWindow returns [start, end) range of entries to show given height.
+func visibleWindow(selected, total, height int) (int, int) {
+	if total <= height {
+		return 0, total
+	}
+	// Keep selected roughly centred
+	half := height / 2
+	start := selected - half
+	if start < 0 {
+		start = 0
+	}
+	end := start + height
+	if end > total {
+		end = total
+		start = max(0, end-height)
+	}
+	return start, end
+}
+
+// padRight pads or truncates s to exactly n visible chars.
+func padRight(s string, n int) string {
+	w := lipgloss.Width(s)
+	if w >= n {
+		return trimToWidth(s, n)
+	}
+	return s + strings.Repeat(" ", n-w)
 }
 
 func (m model) isInPreviewPane(x, y int) bool {
-	leftW := max(24, m.width/3)
-	bodyH := max(4, m.height-2)
-	previewStartX := leftW
-	previewStartY := 2
-	previewEndY := bodyH - 1
+	leftW := max(26, m.width/3)
+	bodyH := max(4, m.height-4)
+	previewStartX := leftW + 1
+	previewStartY := 3 // top bar + body header
+	previewEndY := previewStartY + bodyH - 1
 
 	return x >= previewStartX && y >= previewStartY && y <= previewEndY
 }
@@ -374,9 +744,11 @@ func (m *model) clampPreviewOffset() {
 }
 
 func (m model) previewViewportHeight() int {
-	bodyH := max(4, m.height-2)
+	bodyH := max(4, m.height-4)
 	return max(1, bodyH-2)
 }
+
+// ── preview builders ──────────────────────────────────────────────────────────
 
 func buildPreview(path string, width, height int) (string, error) {
 	info, err := os.Stat(path)
@@ -444,24 +816,37 @@ func buildDirPreview(path string) (string, error) {
 		return "", err
 	}
 
-	items := make([]string, 0, maxDirPreview+3)
-	items = append(items, fmt.Sprintf("directory: %s", path))
-	items = append(items, fmt.Sprintf("items: %d", len(entries)))
-	items = append(items, "")
+	// Styled directory preview
+	dirStyle := lipgloss.NewStyle().Foreground(clrDir).Bold(true)
+	mutedStyle := lipgloss.NewStyle().Foreground(clrMuted)
+	dimStyle := lipgloss.NewStyle().Foreground(clrDim)
+
+	var sb strings.Builder
+	sb.WriteString(dirStyle.Render("▸ "+filepath.Base(path)+"/") + "\n")
+	sb.WriteString(mutedStyle.Render(fmt.Sprintf("  %d items", len(entries))) + "\n")
+	sb.WriteString(dimStyle.Render("  "+strings.Repeat("─", 30)) + "\n\n")
 
 	limit := min(len(entries), maxDirPreview)
 	for i := 0; i < limit; i++ {
-		name := entries[i].Name()
-		if entries[i].IsDir() {
-			name += "/"
+		e := entries[i]
+		name := e.Name()
+		var line string
+		if e.IsDir() {
+			line = lipgloss.NewStyle().Foreground(clrDir).Render("  ▸ " + name + "/")
+		} else {
+			// categorise by name only (no stat for speed)
+			fakeEntry := entry{name: name, isDir: false}
+			cat := categorise(fakeEntry)
+			col := fileColor(cat)
+			line = col.Render("  " + fileIcon(cat) + name)
 		}
-		items = append(items, name)
+		sb.WriteString(line + "\n")
 	}
 	if len(entries) > limit {
-		items = append(items, fmt.Sprintf("... and %d more", len(entries)-limit))
+		sb.WriteString(mutedStyle.Render(fmt.Sprintf("\n  … and %d more", len(entries)-limit)) + "\n")
 	}
 
-	return strings.Join(items, "\n"), nil
+	return strings.TrimRight(sb.String(), "\n"), nil
 }
 
 func imagePreview(path string, width, height int) (string, bool) {
@@ -936,13 +1321,6 @@ func trimToWidth(s string, width int) string {
 		return string(runes[:1])
 	}
 	return string(runes[:width-1]) + "…"
-}
-
-func rawName(e entry) string {
-	if e.isDir {
-		return e.name + "/"
-	}
-	return e.name
 }
 
 func humanSize(n int64) string {
