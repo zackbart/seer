@@ -1211,14 +1211,16 @@ func imagePreview(path string, width, height int) (string, bool) {
 	return rendered, true
 }
 
-// seerMarkdownStyle is a custom glamour style that renders headings without
-// markdown-symbol prefixes, keeping headers visually distinct via color/bold.
+// seerMarkdownStyle renders markdown as a true visual preview.
+// Heading levels are indicated by box-drawing bar prefixes (▌ ┃ │ ┆ ┊)
+// rather than raw # symbols. document.margin is 0 — width is controlled
+// by WithWordWrap so glamour doesn't double-count panel margins.
 var seerMarkdownStyle = []byte(`{
   "document": {
     "block_prefix": "\n",
     "block_suffix": "\n",
     "color": "252",
-    "margin": 1
+    "margin": 0
   },
   "block_quote": {
     "indent": 1,
@@ -1226,10 +1228,8 @@ var seerMarkdownStyle = []byte(`{
     "color": "243",
     "italic": true
   },
-  "paragraph": {},
-  "list": {
-    "level_indent": 2
-  },
+  "paragraph": { "block_suffix": "\n" },
+  "list": { "level_indent": 2 },
   "heading": {
     "block_suffix": "\n",
     "bold": true
@@ -1238,92 +1238,100 @@ var seerMarkdownStyle = []byte(`{
     "prefix": " ",
     "suffix": " ",
     "color": "228",
-    "background_color": "63",
-    "bold": true
+    "background_color": "62",
+    "bold": true,
+    "block_suffix": "\n\n"
   },
   "h2": {
-    "color": "117",
+    "prefix": "▌ ",
+    "color": "75",
     "bold": true,
     "block_suffix": "\n"
   },
   "h3": {
-    "color": "147",
-    "bold": true
+    "prefix": "┃ ",
+    "color": "111",
+    "bold": true,
+    "block_suffix": "\n"
   },
   "h4": {
-    "color": "189",
-    "bold": true
+    "prefix": "│ ",
+    "color": "147",
+    "bold": false,
+    "block_suffix": "\n"
   },
   "h5": {
-    "color": "243",
-    "bold": true
+    "prefix": "┆ ",
+    "color": "182",
+    "bold": false
   },
   "h6": {
+    "prefix": "┊ ",
     "color": "240",
     "bold": false
   },
   "text": {},
   "strikethrough": { "crossed_out": true },
-  "emph": { "italic": true },
-  "strong": { "bold": true },
+  "emph": { "italic": true, "color": "188" },
+  "strong": { "bold": true, "color": "255" },
   "hr": {
-    "color": "240",
-    "format": "\n────────\n"
+    "color": "238",
+    "format": "\n─────────────────────────\n"
   },
   "item": { "block_prefix": "• " },
   "enumeration": { "block_prefix": ". " },
   "task": {
-    "ticked": "[✓] ",
-    "unticked": "[ ] "
+    "ticked": "✓ ",
+    "unticked": "○ "
   },
   "link": { "color": "75", "underline": true },
   "link_text": { "color": "114", "bold": true },
   "image": { "color": "212", "underline": true },
-  "image_text": { "color": "243", "format": "Image: {{.text}} →" },
+  "image_text": { "color": "243", "format": "{{.text}}" },
   "code": {
     "prefix": " ",
     "suffix": " ",
-    "color": "203",
+    "color": "120",
     "background_color": "236"
   },
   "code_block": {
-    "color": "244",
-    "margin": 2,
+    "color": "250",
+    "margin": 1,
     "chroma": {
-      "text": { "color": "#C4C4C4" },
-      "error": { "color": "#F1F1F1", "background_color": "#F05B5B" },
-      "comment": { "color": "#676767" },
-      "comment_preproc": { "color": "#FF875F" },
-      "keyword": { "color": "#00AAFF" },
-      "keyword_reserved": { "color": "#FF5FD2" },
-      "keyword_namespace": { "color": "#FF5F87" },
-      "keyword_type": { "color": "#6E6ED8" },
-      "operator": { "color": "#EF8080" },
-      "punctuation": { "color": "#E8E8A8" },
-      "name": { "color": "#C4C4C4" },
-      "name_builtin": { "color": "#FF8EC7" },
-      "name_tag": { "color": "#B083EA" },
-      "name_attribute": { "color": "#7A7AE6" },
-      "name_class": { "color": "#F1F1F1", "underline": true, "bold": true },
-      "name_function": { "color": "#00D787" },
-      "name_decorator": { "color": "#FFFF87" },
-      "literal_number": { "color": "#6EEFC0" },
-      "literal_string": { "color": "#C69669" },
-      "literal_string_escape": { "color": "#AFFFD7" },
-      "generic_deleted": { "color": "#FD5B5B" },
-      "generic_emph": { "italic": true },
-      "generic_inserted": { "color": "#00D787" },
-      "generic_strong": { "bold": true },
-      "generic_subheading": { "color": "#777777" },
-      "background": { "background_color": "#373737" }
+      "text":                  { "color": "#C4C4C4" },
+      "error":                 { "color": "#F1F1F1", "background_color": "#F05B5B" },
+      "comment":               { "color": "#6B7280" },
+      "comment_preproc":       { "color": "#FF875F" },
+      "keyword":               { "color": "#60A5FA" },
+      "keyword_reserved":      { "color": "#F472B6" },
+      "keyword_namespace":     { "color": "#FB7185" },
+      "keyword_type":          { "color": "#818CF8" },
+      "operator":              { "color": "#94A3B8" },
+      "punctuation":           { "color": "#CBD5E1" },
+      "name":                  { "color": "#C4C4C4" },
+      "name_builtin":          { "color": "#F9A8D4" },
+      "name_tag":              { "color": "#C084FC" },
+      "name_attribute":        { "color": "#7DD3FC" },
+      "name_class":            { "color": "#F8FAFC", "bold": true },
+      "name_function":         { "color": "#34D399" },
+      "name_decorator":        { "color": "#FDE68A" },
+      "literal_number":        { "color": "#6EE7B7" },
+      "literal_string":        { "color": "#FCA5A5" },
+      "literal_string_escape": { "color": "#A5F3FC" },
+      "generic_deleted":       { "color": "#FCA5A5" },
+      "generic_emph":          { "italic": true },
+      "generic_inserted":      { "color": "#6EE7B7" },
+      "generic_strong":        { "bold": true },
+      "generic_subheading":    { "color": "#6B7280" },
+      "background":            { "background_color": "#1E1E2E" }
     }
   },
   "table": {},
   "definition_list": {},
-  "definition_term": {},
+  "definition_term": { "bold": true, "color": "111" },
   "definition_description": { "block_prefix": "\n  " },
-  "html_block": {},
-  "html_span": {}
+  "html_block": { "color": "240" },
+  "html_span": { "color": "240" }
 }`)
 
 func renderMarkdownPreview(markdown string, width int, truncated bool) string {
@@ -1331,7 +1339,7 @@ func renderMarkdownPreview(markdown string, width int, truncated bool) string {
 	rendered := prepared
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStylesFromJSONBytes(seerMarkdownStyle),
-		glamour.WithWordWrap(max(24, width-3)),
+		glamour.WithWordWrap(max(24, width-2)),
 		glamour.WithTableWrap(true),
 		glamour.WithEmoji(),
 	)
