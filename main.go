@@ -24,6 +24,9 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/truncate"
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
 )
 
 const (
@@ -64,7 +67,6 @@ var imageExts = map[string]bool{
 	".gif":  true,
 	".bmp":  true,
 	".tiff": true,
-	".svg":  true,
 }
 
 // fileCategory returns a broad category for an entry used to pick colour/icon.
@@ -87,7 +89,7 @@ func categorise(e entry) fileCategory {
 	}
 	ext := strings.ToLower(filepath.Ext(e.name))
 	switch ext {
-	case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff", ".svg":
+	case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff":
 		return catImage
 	case ".md", ".markdown", ".mdx", ".rst", ".txt":
 		return catDoc
@@ -113,32 +115,32 @@ var nerdFonts = os.Getenv("SEER_NO_NERD_FONT") != "1"
 // nerdIconByExt maps file extensions to specific Nerd Font glyphs.
 var nerdIconByExt = map[string]string{
 	// languages
-	".go":       "\ue627 ", //
-	".js":       "\ue60c ", //
-	".ts":       "\ue628 ", //
-	".jsx":      "\ue60c ", //
-	".tsx":      "\ue60c ", //
-	".py":       "\ue606 ", //
-	".rb":       "\ue21e ", //
-	".rs":       "\ue7a8 ", //
-	".c":        "\ue61e ", //
-	".cpp":      "\ue61d ", //
-	".h":        "\uf0fd ", //
-	".java":     "\ue204 ", //
-	".cs":       "\uf031b ", // 󰌛
-	".php":      "\ue60a ", //
-	".swift":    "\ue755 ", //
-	".kt":       "\ue634 ", //
-	".lua":      "\ue620 ", //
-	".hs":       "\ue61f ", //
-	".vim":      "\ue62b ", //
-	".sh":       "\uf489 ", //
-	".bash":     "\uf489 ", //
-	".zsh":      "\uf489 ", //
-	".fish":     "\uf489 ", //
-	".ps1":      "\uf489 ", //
-	".bat":      "\uf489 ", //
-	".cmd":      "\uf489 ", //
+	".go":    "\ue627 ",  //
+	".js":    "\ue60c ",  //
+	".ts":    "\ue628 ",  //
+	".jsx":   "\ue60c ",  //
+	".tsx":   "\ue60c ",  //
+	".py":    "\ue606 ",  //
+	".rb":    "\ue21e ",  //
+	".rs":    "\ue7a8 ",  //
+	".c":     "\ue61e ",  //
+	".cpp":   "\ue61d ",  //
+	".h":     "\uf0fd ",  //
+	".java":  "\ue204 ",  //
+	".cs":    "\uf031b ", // 󰌛
+	".php":   "\ue60a ",  //
+	".swift": "\ue755 ",  //
+	".kt":    "\ue634 ",  //
+	".lua":   "\ue620 ",  //
+	".hs":    "\ue61f ",  //
+	".vim":   "\ue62b ",  //
+	".sh":    "\uf489 ",  //
+	".bash":  "\uf489 ",  //
+	".zsh":   "\uf489 ",  //
+	".fish":  "\uf489 ",  //
+	".ps1":   "\uf489 ",  //
+	".bat":   "\uf489 ",  //
+	".cmd":   "\uf489 ",  //
 	// docs
 	".md":       "\ue609 ", //
 	".markdown": "\ue609 ", //
@@ -146,30 +148,30 @@ var nerdIconByExt = map[string]string{
 	".rst":      "\uf15c ", //
 	".txt":      "\uf15c ", //
 	// config
-	".json":     "\ue60b ", //
-	".yaml":     "\uf481 ", //
-	".yml":      "\uf481 ", //
-	".toml":     "\uf481 ", //
-	".xml":      "\uf05c0 ", // 󰗀
-	".env":      "\uf462 ", //
-	".ini":      "\uf17a ", //
-	".conf":     "\uf17a ", //
+	".json": "\ue60b ",  //
+	".yaml": "\uf481 ",  //
+	".yml":  "\uf481 ",  //
+	".toml": "\uf481 ",  //
+	".xml":  "\uf05c0 ", // 󰗀
+	".env":  "\uf462 ",  //
+	".ini":  "\uf17a ",  //
+	".conf": "\uf17a ",  //
 	// images
-	".png":      "\uf1c5 ", //
-	".jpg":      "\uf1c5 ", //
-	".jpeg":     "\uf1c5 ", //
-	".gif":      "\uf1c5 ", //
-	".webp":     "\uf1c5 ", //
-	".svg":      "\uf1c5 ", //
-	".bmp":      "\uf1c5 ", //
+	".png":  "\uf1c5 ", //
+	".jpg":  "\uf1c5 ", //
+	".jpeg": "\uf1c5 ", //
+	".gif":  "\uf1c5 ", //
+	".webp": "\uf1c5 ", //
+	".svg":  "\uf1c5 ", //
+	".bmp":  "\uf1c5 ", //
 	// misc
-	".mmd":      "\ueb43 ", //
-	".mermaid":  "\ueb43 ", //
-	".pdf":      "\uf1c1 ", //
-	".zip":      "\uf410 ", //
-	".tar":      "\uf410 ", //
-	".gz":       "\uf410 ", //
-	".gitignore": "\ue702 ", //
+	".mmd":          "\ueb43 ", //
+	".mermaid":      "\ueb43 ", //
+	".pdf":          "\uf1c1 ", //
+	".zip":          "\uf410 ", //
+	".tar":          "\uf410 ", //
+	".gz":           "\uf410 ", //
+	".gitignore":    "\ue702 ", //
 	".dockerignore": "\uf308 ", //
 }
 
@@ -257,8 +259,8 @@ const previewCacheMax = 50
 
 type model struct {
 	cwd           string
-	allEntries    []entry  // full unfiltered listing
-	entries       []entry  // visible (filtered) listing
+	allEntries    []entry // full unfiltered listing
+	entries       []entry // visible (filtered) listing
 	selected      int
 	showHidden    bool
 	preview       string
@@ -271,8 +273,11 @@ type model struct {
 	cache         map[string]string
 	cacheOrder    []string // LRU insertion order for cache eviction
 	// Search / filter state
-	searching  bool
+	searching   bool
 	searchQuery string
+	// Delete confirmation dialog
+	confirmingDelete bool
+	deleteTarget     string
 }
 
 func initialModel() model {
@@ -320,6 +325,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.requestPreview()
 
 	case tea.KeyMsg:
+		// Handle delete confirmation at top level
+		if m.confirmingDelete {
+			key := msg.String()
+			if key == "y" || key == "Y" || key == "enter" {
+				if err := moveToTrash(m.deleteTarget); err != nil {
+					m.status = "delete failed: " + err.Error()
+				} else {
+					m.status = "moved to trash"
+					entries, err := listDir(m.cwd, m.showHidden)
+					if err != nil {
+						m.status = err.Error()
+					} else {
+						m.allEntries = entries
+						m.entries = m.applySearch(entries)
+						if m.selected >= len(m.entries) {
+							m.selected = max(0, len(m.entries)-1)
+						}
+					}
+				}
+				m.confirmingDelete = false
+				m.deleteTarget = ""
+				return m, m.requestPreview()
+			}
+			if key == "n" || key == "N" || key == "esc" {
+				m.confirmingDelete = false
+				m.deleteTarget = ""
+				m.status = "delete cancelled"
+				return m, nil
+			}
+			return m, nil
+		}
+
 		// In search mode, printable characters extend the query.
 		if m.searching && len(msg.Runes) == 1 {
 			m.searchQuery += string(msg.Runes)
@@ -366,6 +403,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.requestPreview()
 				}
 				break
+			}
+			if len(m.entries) > 0 && m.selected < len(m.entries) {
+				m.confirmingDelete = true
+				m.deleteTarget = m.entries[m.selected].path
+				m.status = "confirm delete: y/n"
+				return m, nil
 			}
 			parent := filepath.Dir(m.cwd)
 			if parent != m.cwd {
@@ -505,7 +548,67 @@ func (m model) View() string {
 	bottomBar := m.renderBottomBar(m.width)
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, sep, rightPane)
+
+	if m.confirmingDelete {
+		dialog := m.renderDeleteDialog(leftW + rightW + 1)
+		return topBar + "\n" + dialog + "\n" + bottomBar
+	}
+
 	return topBar + "\n" + body + "\n" + bottomBar
+}
+
+func (m model) renderDeleteDialog(width int) string {
+	fileName := filepath.Base(m.deleteTarget)
+	dialogWidth := min(60, width-4)
+	dialogHeight := 5
+
+	content := fmt.Sprintf("Delete \"%s\"? [y/n]", fileName)
+	contentLen := lipgloss.Width(content)
+	padding := (dialogWidth - contentLen - 2) / 2
+	extra := (dialogWidth - contentLen - 2) % 2
+
+	borderStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(clrAccent).
+		Foreground(clrAccentFg)
+
+	contentRow := borderStyle.Width(dialogWidth).Render(
+		strings.Repeat(" ", padding) + content + strings.Repeat(" ", padding+extra),
+	)
+	bottomRow := borderStyle.Width(dialogWidth).Render(
+		" y = confirm  ·  n / esc = cancel ",
+	)
+
+	dialogBox := lipgloss.JoinVertical(
+		lipgloss.Center,
+		contentRow,
+		bottomRow,
+	)
+
+	dialogH := lipgloss.Height(dialogBox)
+	topPad := (dialogHeight - dialogH) / 2
+	bottomPad := (dialogHeight - dialogH) - topPad
+
+	lines := make([]string, 0, dialogHeight)
+	for i := 0; i < topPad; i++ {
+		lines = append(lines, strings.Repeat(" ", dialogWidth))
+	}
+	lines = append(lines, dialogBox)
+	for i := 0; i < bottomPad; i++ {
+		lines = append(lines, strings.Repeat(" ", dialogWidth))
+	}
+
+	dialogStr := lipgloss.JoinVertical(lipgloss.Center, lines...)
+	dialogStr = borderStyle.Padding(0, 1).Render(dialogStr)
+
+	sidePad := (width - dialogWidth - 2) / 2
+
+	allLines := strings.Split(dialogStr, "\n")
+	result := make([]string, 0, dialogHeight)
+	for _, line := range allLines {
+		result = append(result, strings.Repeat(" ", sidePad)+line)
+	}
+	return lipgloss.JoinVertical(lipgloss.Top, result...)
 }
 
 // renderTopBar draws the full-width breadcrumb path bar.
@@ -1211,134 +1314,11 @@ func imagePreview(path string, width, height int) (string, bool) {
 	return rendered, true
 }
 
-// seerMarkdownStyle renders markdown as a true visual preview.
-// Heading levels are indicated by box-drawing bar prefixes (▌ ┃ │ ┆ ┊)
-// rather than raw # symbols. document.margin is 0 — width is controlled
-// by WithWordWrap so glamour doesn't double-count panel margins.
-var seerMarkdownStyle = []byte(`{
-  "document": {
-    "block_prefix": "\n",
-    "block_suffix": "\n",
-    "color": "252",
-    "margin": 0
-  },
-  "block_quote": {
-    "indent": 1,
-    "indent_token": "│ ",
-    "color": "243",
-    "italic": true
-  },
-  "paragraph": { "block_suffix": "\n" },
-  "list": { "level_indent": 2 },
-  "heading": {
-    "block_suffix": "\n",
-    "bold": true
-  },
-  "h1": {
-    "prefix": " ",
-    "suffix": " ",
-    "color": "228",
-    "background_color": "62",
-    "bold": true,
-    "block_suffix": "\n\n"
-  },
-  "h2": {
-    "prefix": "▌ ",
-    "color": "75",
-    "bold": true,
-    "block_suffix": "\n"
-  },
-  "h3": {
-    "prefix": "┃ ",
-    "color": "111",
-    "bold": true,
-    "block_suffix": "\n"
-  },
-  "h4": {
-    "prefix": "│ ",
-    "color": "147",
-    "bold": false,
-    "block_suffix": "\n"
-  },
-  "h5": {
-    "prefix": "┆ ",
-    "color": "182",
-    "bold": false
-  },
-  "h6": {
-    "prefix": "┊ ",
-    "color": "240",
-    "bold": false
-  },
-  "text": {},
-  "strikethrough": { "crossed_out": true },
-  "emph": { "italic": true, "color": "188" },
-  "strong": { "bold": true, "color": "255" },
-  "hr": {
-    "color": "238",
-    "format": "\n─────────────────────────\n"
-  },
-  "item": { "block_prefix": "• " },
-  "enumeration": { "block_prefix": ". " },
-  "task": {
-    "ticked": "✓ ",
-    "unticked": "○ "
-  },
-  "link": { "color": "75", "underline": true },
-  "link_text": { "color": "114", "bold": true },
-  "image": { "color": "212", "underline": true },
-  "image_text": { "color": "243", "format": "{{.text}}" },
-  "code": {
-    "prefix": " ",
-    "suffix": " ",
-    "color": "120",
-    "background_color": "236"
-  },
-  "code_block": {
-    "color": "250",
-    "margin": 1,
-    "chroma": {
-      "text":                  { "color": "#C4C4C4" },
-      "error":                 { "color": "#F1F1F1", "background_color": "#F05B5B" },
-      "comment":               { "color": "#6B7280" },
-      "comment_preproc":       { "color": "#FF875F" },
-      "keyword":               { "color": "#60A5FA" },
-      "keyword_reserved":      { "color": "#F472B6" },
-      "keyword_namespace":     { "color": "#FB7185" },
-      "keyword_type":          { "color": "#818CF8" },
-      "operator":              { "color": "#94A3B8" },
-      "punctuation":           { "color": "#CBD5E1" },
-      "name":                  { "color": "#C4C4C4" },
-      "name_builtin":          { "color": "#F9A8D4" },
-      "name_tag":              { "color": "#C084FC" },
-      "name_attribute":        { "color": "#7DD3FC" },
-      "name_class":            { "color": "#F8FAFC", "bold": true },
-      "name_function":         { "color": "#34D399" },
-      "name_decorator":        { "color": "#FDE68A" },
-      "literal_number":        { "color": "#6EE7B7" },
-      "literal_string":        { "color": "#FCA5A5" },
-      "literal_string_escape": { "color": "#A5F3FC" },
-      "generic_deleted":       { "color": "#FCA5A5" },
-      "generic_emph":          { "italic": true },
-      "generic_inserted":      { "color": "#6EE7B7" },
-      "generic_strong":        { "bold": true },
-      "generic_subheading":    { "color": "#6B7280" },
-      "background":            { "background_color": "#1E1E2E" }
-    }
-  },
-  "table": {},
-  "definition_list": {},
-  "definition_term": { "bold": true, "color": "111" },
-  "definition_description": { "block_prefix": "\n  " },
-  "html_block": { "color": "240" },
-  "html_span": { "color": "240" }
-}`)
-
 func renderMarkdownPreview(markdown string, width int, truncated bool) string {
 	prepared := replaceMermaidFences(markdown)
 	rendered := prepared
 	r, err := glamour.NewTermRenderer(
-		glamour.WithStylesFromJSONBytes(seerMarkdownStyle),
+		glamour.WithStandardStyle("tokyo-night"),
 		glamour.WithWordWrap(max(24, width-2)),
 		glamour.WithTableWrap(true),
 		glamour.WithEmoji(),
@@ -1478,9 +1458,57 @@ func renderImageASCII(img image.Image, width, height int) string {
 		return ""
 	}
 
-	chars := []rune(" .:-=+*#%@")
 	outW := max(16, width-2)
 	outH := max(8, height-3)
+
+	if supportsTrueColor() {
+		return renderImageTrueColor(img, outW, outH)
+	}
+	return renderImageGray(img, outW, outH)
+}
+
+func rgbValues(c color.Color) (int, int, int) {
+	r, g, b, _ := c.RGBA()
+	return int(r >> 8), int(g >> 8), int(b >> 8)
+}
+
+func renderImageTrueColor(img image.Image, outW, outH int) string {
+	b := img.Bounds()
+	scaledH := outH * 2
+
+	var sb strings.Builder
+	for row := 0; row < outH; row++ {
+		upperY := b.Min.Y + ((row*2)*(b.Dy()-1))/max(1, scaledH-1)
+		lowerY := b.Min.Y + ((row*2+1)*(b.Dy()-1))/max(1, scaledH-1)
+
+		lastFgR, lastFgG, lastFgB := -1, -1, -1
+		lastBgR, lastBgG, lastBgB := -1, -1, -1
+
+		for x := 0; x < outW; x++ {
+			sx := b.Min.X + (x*(b.Dx()-1))/max(1, outW-1)
+			fgR, fgG, fgB := rgbValues(img.At(sx, upperY))
+			bgR, bgG, bgB := rgbValues(img.At(sx, lowerY))
+
+			if fgR != lastFgR || fgG != lastFgG || fgB != lastFgB || bgR != lastBgR || bgG != lastBgG || bgB != lastBgB {
+				writeTrueColorANSI(&sb, fgR, fgG, fgB, bgR, bgG, bgB)
+				lastFgR, lastFgG, lastFgB = fgR, fgG, fgB
+				lastBgR, lastBgG, lastBgB = bgR, bgG, bgB
+			}
+			sb.WriteRune('▀')
+		}
+
+		sb.WriteString("\x1b[0m")
+		if row < outH-1 {
+			sb.WriteByte('\n')
+		}
+	}
+
+	return sb.String()
+}
+
+func renderImageGray(img image.Image, outW, outH int) string {
+	b := img.Bounds()
+	chars := []rune(" .:-=+*#%@")
 
 	var sb strings.Builder
 	for y := 0; y < outH; y++ {
@@ -1503,6 +1531,25 @@ func renderImageASCII(img image.Image, width, height int) string {
 	}
 
 	return sb.String()
+}
+
+func writeTrueColorANSI(sb *strings.Builder, fgR, fgG, fgB, bgR, bgG, bgB int) {
+	fmt.Fprintf(sb, "\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm", fgR, fgG, fgB, bgR, bgG, bgB)
+}
+
+func supportsTrueColor() bool {
+	if _, noColor := os.LookupEnv("NO_COLOR"); noColor {
+		return false
+	}
+	colorTerm := strings.ToLower(os.Getenv("COLORTERM"))
+	if strings.Contains(colorTerm, "truecolor") || strings.Contains(colorTerm, "24bit") {
+		return true
+	}
+	term := strings.ToLower(os.Getenv("TERM"))
+	if strings.Contains(term, "kitty") || strings.Contains(term, "wezterm") {
+		return true
+	}
+	return false
 }
 
 func luminance(c color.Color) float64 {
@@ -2248,6 +2295,41 @@ func listDir(path string, showHidden bool) ([]entry, error) {
 	})
 
 	return entries, nil
+}
+
+func moveToTrash(path string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	trashPath := filepath.Join(homeDir, ".Trash")
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	baseName := filepath.Base(path)
+	destPath := filepath.Join(trashPath, baseName)
+	if info.IsDir() {
+		for i := 1; ; i++ {
+			testPath := filepath.Join(trashPath, fmt.Sprintf("%s %d", baseName, i))
+			if _, err := os.Stat(testPath); os.IsNotExist(err) {
+				destPath = testPath
+				break
+			}
+		}
+	} else {
+		ext := filepath.Ext(baseName)
+		stem := strings.TrimSuffix(baseName, ext)
+		for i := 1; ; i++ {
+			testName := fmt.Sprintf("%s %d%s", stem, i, ext)
+			testPath := filepath.Join(trashPath, testName)
+			if _, err := os.Stat(testPath); os.IsNotExist(err) {
+				destPath = testPath
+				break
+			}
+		}
+	}
+	return os.Rename(path, destPath)
 }
 
 func previewKey(path string, modTime time.Time, size int64, width, height int) string {
