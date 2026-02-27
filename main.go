@@ -404,18 +404,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				break
 			}
-			if len(m.entries) > 0 && m.selected < len(m.entries) {
-				m.confirmingDelete = true
-				m.deleteTarget = m.entries[m.selected].path
-				m.status = "confirm delete: y/n"
-				return m, nil
-			}
 			parent := filepath.Dir(m.cwd)
 			if parent != m.cwd {
 				if err := m.changeDir(parent); err != nil {
 					m.status = err.Error()
 				}
 				return m, m.requestPreview()
+			}
+		case "delete":
+			if len(m.entries) > 0 && m.selected < len(m.entries) {
+				m.confirmingDelete = true
+				m.deleteTarget = m.entries[m.selected].path
+				m.status = "confirm delete: y/n"
+				return m, nil
 			}
 		case ".":
 			// Remember current filename so we can restore position after reload.
