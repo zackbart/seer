@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -11,7 +12,9 @@ import (
 	_ "image/png"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -23,6 +26,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/reflow/truncate"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
@@ -255,6 +259,11 @@ type previewLoadedMsg struct {
 	err       error
 }
 
+type selectionPoint struct {
+	x int
+	y int
+}
+
 const previewCacheMax = 50
 
 type model struct {
@@ -278,6 +287,10 @@ type model struct {
 	// Delete confirmation dialog
 	confirmingDelete bool
 	deleteTarget     string
+	// Preview mouse selection state for auto-copy on release.
+	previewSelecting bool
+	previewSelStart  selectionPoint
+	previewSelEnd    selectionPoint
 }
 
 func initialModel() model {
@@ -482,21 +495,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		event := tea.MouseEvent(msg)
-		if !m.isInPreviewPane(event.X, event.Y) {
+		inPreviewPane := m.isInPreviewPane(event.X, event.Y)
+		inPreviewBody := m.isInPreviewBody(event.X, event.Y)
+
+		if event.IsWheel() {
+			if !inPreviewPane {
+				return m, nil
+			}
+			scroll := previewPageSize(m.height) / 3
+			if scroll < 1 {
+				scroll = 1
+			}
+			switch event.Button {
+			case tea.MouseButtonWheelDown:
+				m.previewOffset += scroll
+				m.clampPreviewOffset()
+			case tea.MouseButtonWheelUp:
+				m.previewOffset -= scroll
+				m.clampPreviewOffset()
+			}
 			return m, nil
 		}
 
-		scroll := previewPageSize(m.height) / 3
-		if scroll < 1 {
-			scroll = 1
-		}
-		switch event.Button {
-		case tea.MouseButtonWheelDown:
-			m.previewOffset += scroll
-			m.clampPreviewOffset()
-		case tea.MouseButtonWheelUp:
-			m.previewOffset -= scroll
-			m.clampPreviewOffset()
+		// Track left-button drag in the preview body and auto-copy on release.
+		switch event.Action {
+		case tea.MouseActionPress:
+			if event.Button == tea.MouseButtonLeft && inPreviewBody {
+				m.previewSelecting = true
+				p := m.previewBodyPoint(event.X, event.Y)
+				m.previewSelStart = p
+				m.previewSelEnd = p
+			}
+		case tea.MouseActionMotion:
+			if m.previewSelecting {
+				m.previewSelEnd = m.previewBodyPoint(event.X, event.Y)
+			}
+		case tea.MouseActionRelease:
+			if m.previewSelecting && (event.Button == tea.MouseButtonLeft || event.Button == tea.MouseButtonNone) {
+				m.previewSelEnd = m.previewBodyPoint(event.X, event.Y)
+				selected := m.selectedPreviewText()
+				m.previewSelecting = false
+				if selected == "" {
+					return m, nil
+				}
+				if err := copyToClipboard(selected); err != nil {
+					m.status = "copy failed: " + err.Error()
+					return m, nil
+				}
+				m.status = fmt.Sprintf("copied %d chars", utf8.RuneCountInString(selected))
+			}
 		}
 
 	case previewLoadedMsg:
@@ -1064,12 +1111,191 @@ func (m model) layoutDimensions() (leftW, rightW, bodyH int) {
 }
 
 func (m model) isInPreviewPane(x, y int) bool {
-	leftW, _, bodyH := m.layoutDimensions()
+	leftW, rightW, bodyH := m.layoutDimensions()
 	previewStartX := leftW + 1
+	previewEndX := previewStartX + rightW - 1
 	previewStartY := 3 // top bar + body header
 	previewEndY := previewStartY + bodyH - 1
 
-	return x >= previewStartX && y >= previewStartY && y <= previewEndY
+	return x >= previewStartX && x <= previewEndX && y >= previewStartY && y <= previewEndY
+}
+
+func (m model) previewBodyRect() (startX, startY, width, height int) {
+	leftW, rightW, bodyH := m.layoutDimensions()
+	startX = leftW + 1
+	startY = 3
+	width = max(1, rightW)
+	height = max(1, bodyH-2)
+	return
+}
+
+func (m model) isInPreviewBody(x, y int) bool {
+	startX, startY, width, height := m.previewBodyRect()
+	endX := startX + width - 1
+	endY := startY + height - 1
+	return x >= startX && x <= endX && y >= startY && y <= endY
+}
+
+func (m model) previewBodyPoint(x, y int) selectionPoint {
+	startX, startY, width, height := m.previewBodyRect()
+	col := x - startX
+	row := y - startY
+	col = max(0, min(col, width))
+	row = max(0, min(row, height-1))
+	return selectionPoint{x: col, y: row}
+}
+
+func (m model) selectedPreviewText() string {
+	start := m.previewSelStart
+	end := m.previewSelEnd
+	if start.y > end.y || (start.y == end.y && start.x > end.x) {
+		start, end = end, start
+	}
+	if start == end {
+		return ""
+	}
+
+	_, _, width, height := m.previewBodyRect()
+	lines := m.visiblePreviewLinesForCopy(width, height)
+	if len(lines) == 0 {
+		return ""
+	}
+
+	var out []string
+	for row := start.y; row <= end.y; row++ {
+		line := ""
+		if row >= 0 && row < len(lines) {
+			line = lines[row]
+		}
+		partStart := 0
+		partEnd := width
+		if row == start.y {
+			partStart = start.x
+		}
+		if row == end.y {
+			partEnd = end.x
+		}
+		if partEnd < partStart {
+			partEnd = partStart
+		}
+		out = append(out, sliceByColumns(line, partStart, partEnd))
+	}
+	return strings.Join(out, "\n")
+}
+
+func (m model) visiblePreviewLinesForCopy(width, height int) []string {
+	if width <= 0 || height <= 0 {
+		return nil
+	}
+
+	previewBody := m.preview
+	if previewBody == "" && !m.loading {
+		previewBody = "  (no preview available)"
+	}
+	if m.loading {
+		previewBody = "  loading preview..."
+	}
+
+	contentH := height
+	lines := make([]string, 0, height)
+	if m.previewOffset > 0 {
+		contentH--
+		lines = append(lines, fmt.Sprintf("  ↑ line %d", m.previewOffset+1))
+	}
+	if contentH < 1 {
+		contentH = 1
+	}
+
+	tmp := m
+	sliced := tmp.slicePreview(previewBody, contentH)
+	bodyLines := strings.Split(sliced, "\n")
+	lines = append(lines, bodyLines...)
+
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+
+	for i, line := range lines {
+		plain := ansi.Strip(line)
+		lines[i] = sliceByColumns(plain, 0, width)
+	}
+	return lines
+}
+
+func sliceByColumns(s string, start, end int) string {
+	if end <= start {
+		return ""
+	}
+	if start < 0 {
+		start = 0
+	}
+	startIdx := byteIndexForColumn(s, start)
+	endIdx := byteIndexForColumn(s, end)
+	if endIdx < startIdx {
+		endIdx = startIdx
+	}
+	return s[startIdx:endIdx]
+}
+
+func byteIndexForColumn(s string, col int) int {
+	if col <= 0 {
+		return 0
+	}
+	width := 0
+	for idx, r := range s {
+		rw := lipgloss.Width(string(r))
+		if rw < 1 {
+			rw = 1
+		}
+		if width+rw > col {
+			return idx
+		}
+		width += rw
+	}
+	return len(s)
+}
+
+func copyToClipboard(text string) error {
+	if text == "" {
+		return nil
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		return runClipboardCommand(text, "pbcopy")
+	case "windows":
+		return runClipboardCommand(text, "cmd", "/c", "clip")
+	default:
+		candidates := [][]string{
+			{"wl-copy"},
+			{"xclip", "-selection", "clipboard"},
+			{"xsel", "--clipboard", "--input"},
+		}
+		var lastErr error
+		for _, c := range candidates {
+			if _, err := exec.LookPath(c[0]); err != nil {
+				continue
+			}
+			if err := runClipboardCommand(text, c[0], c[1:]...); err == nil {
+				return nil
+			} else {
+				lastErr = err
+			}
+		}
+		if lastErr != nil {
+			return lastErr
+		}
+		return errors.New("no clipboard utility found (tried wl-copy, xclip, xsel)")
+	}
+}
+
+func runClipboardCommand(text, name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin = strings.NewReader(text)
+	return cmd.Run()
 }
 
 func (m *model) changeDir(path string) error {
