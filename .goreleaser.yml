@@ -47,7 +47,7 @@ brews:
     install: |
       bin.install "seer"
     test: |
-      assert_predicate testpath/"#{bin}/seer", :exist?
+      assert_match version.to_s, shell_output("#{bin}/seer --version")
 
 release:
   github:
