@@ -33,6 +33,8 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
+var version = "dev"
+
 const (
 	maxPreviewBytes = 256 * 1024
 	maxDirPreview   = 40

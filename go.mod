@@ -1,4 +1,4 @@
-module seer
+module github.com/zackbart/seer
 
 go 1.25.0
 

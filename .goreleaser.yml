@@ -1,0 +1,57 @@
+version: 2
+
+project_name: seer
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: .
+    binary: seer
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+brews:
+  - repository:
+      owner: zackbart
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/zackbart/seer"
+    description: "A dead-simple TUI for browsing directories and previewing files"
+    license: "MIT"
+    install: |
+      bin.install "seer"
+    test: |
+      assert_predicate testpath/"#{bin}/seer", :exist?
+
+release:
+  github:
+    owner: zackbart
+    name: seer
+  draft: false
+  prerelease: auto
