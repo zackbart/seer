@@ -599,15 +599,14 @@ func (m model) View() string {
 	// ── bottom bar ────────────────────────────────────────────────────────────
 	bottomBar := m.renderBottomBar(m.width)
 
-	sep := lipgloss.NewStyle().
-		Width(1).
-		Height(bodyH).
-		Background(clrBg).
-		Render("")
-	body := lipgloss.NewStyle().
-		Width(m.width).
-		Background(clrBg).
-		Render(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, sep, rightPane))
+	sepStyle := lipgloss.NewStyle().Foreground(clrBorder)
+	sepLine := sepStyle.Render("│")
+	sepLines := make([]string, bodyH)
+	for i := range sepLines {
+		sepLines[i] = sepLine
+	}
+	sep := strings.Join(sepLines, "\n")
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, sep, rightPane)
 
 	if m.confirmingDelete {
 		dialog := m.renderDeleteDialog(m.width, bodyH)
@@ -678,18 +677,15 @@ func (m model) renderDeleteDialog(width, height int) string {
 	boxHeight := len(boxLines)
 	topPad := max(0, (height-boxHeight)/2)
 	leftPad := max(0, (width-lipgloss.Width(boxLines[0]))/2)
-	bg := lipgloss.NewStyle().Width(width).Background(clrBg)
-
 	lines := make([]string, 0, height)
 	for i := 0; i < topPad; i++ {
-		lines = append(lines, bg.Render(""))
+		lines = append(lines, "")
 	}
 	for _, line := range boxLines {
-		padded := strings.Repeat(" ", leftPad) + line
-		lines = append(lines, bg.Render(padded))
+		lines = append(lines, strings.Repeat(" ", leftPad)+line)
 	}
 	for len(lines) < height {
-		lines = append(lines, bg.Render(""))
+		lines = append(lines, "")
 	}
 	return strings.Join(lines[:height], "\n")
 }
@@ -768,10 +764,6 @@ func (m model) renderTopBar(width int) string {
 
 	return lipgloss.NewStyle().
 		Width(width).
-		Background(clrSurfaceAlt).
-		Foreground(clrAccentFg).
-		BorderBottom(true).
-		BorderForeground(clrBorder).
 		Padding(0, 1).
 		Render(inner)
 }
@@ -781,7 +773,6 @@ func (m model) renderFileList(w, h int) string {
 	paneStyle := lipgloss.NewStyle().
 		Width(w).
 		Height(h).
-		Background(clrSurface).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(clrBorder)
 	innerW := max(8, w-2)
@@ -808,10 +799,9 @@ func (m model) renderFileList(w, h int) string {
 	}
 	titleLine := lipgloss.NewStyle().
 		Width(innerW).
-		Background(clrSurfaceAlt).
-		Padding(0, 1).
-		Render(title + strings.Repeat(" ", titleGap-1) + count)
+		Render(title + strings.Repeat(" ", titleGap) + count)
 	lines = append(lines, titleLine)
+	lines = append(lines, lipgloss.NewStyle().Foreground(clrDim).Render(strings.Repeat("─", innerW)))
 
 	if len(m.entries) == 0 {
 		lines = append(lines, mutedStyle.Render("  (empty directory)"))
@@ -819,7 +809,7 @@ func (m model) renderFileList(w, h int) string {
 		scrollStyle := lipgloss.NewStyle().Foreground(clrScrollbar)
 
 		// Total rows available for file rows + scroll indicators below the header.
-		listH := innerH - 1
+		listH := innerH - 2
 		if listH < 1 {
 			listH = 1
 		}
@@ -913,7 +903,6 @@ func (m model) renderPreviewPane(w, h int) string {
 	paneStyle := lipgloss.NewStyle().
 		Width(w).
 		Height(h).
-		Background(clrSurface).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(clrBorderStrong)
 	innerW := max(12, w-2)
@@ -952,8 +941,8 @@ func (m model) renderPreviewPane(w, h int) string {
 	}
 
 	// Compose header line
-	headerLineStyle := lipgloss.NewStyle().Width(innerW).Background(clrSurfaceAlt).Padding(0, 1)
-	gap := innerW - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight) - 2 // 2 for padding
+	headerLineStyle := lipgloss.NewStyle().Width(innerW)
+	gap := innerW - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
 	if gap < 1 {
 		gap = 1
 	}
@@ -1024,9 +1013,6 @@ func (m model) renderBottomBar(width int) string {
 		prompt := searchStyle.Render("/ ") + queryStyle.Render(m.searchQuery) + cursor
 		statusLine = lipgloss.NewStyle().
 			Width(width).
-			Background(clrSurfaceAlt).
-			BorderTop(true).
-			BorderForeground(clrBorder).
 			Padding(0, 1).
 			Render(prompt)
 	} else {
@@ -1044,9 +1030,6 @@ func (m model) renderBottomBar(width int) string {
 		statusText = trimVisual(statusText, maxStatusW)
 		statusLine = lipgloss.NewStyle().
 			Width(width).
-			Background(clrSurfaceAlt).
-			BorderTop(true).
-			BorderForeground(clrBorder).
 			Padding(0, 1).
 			Render(statusStyle.Render(statusIcon + " " + statusText))
 	}
@@ -1104,7 +1087,6 @@ func (m model) renderBottomBar(width int) string {
 	}
 	keysLine := lipgloss.NewStyle().
 		Width(width).
-		Background(clrBg).
 		Padding(0, 1).
 		Render(strings.Join(parts, ""))
 
