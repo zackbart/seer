@@ -49,7 +49,10 @@ var (
 	clrSurfaceElevated = lipgloss.Color("239") // modal / selected emphasis
 	clrAccent          = lipgloss.Color("111") // soft electric blue accent
 	clrAccentFg        = lipgloss.Color("255") // bright text on accent
-	clrDir             = lipgloss.Color("117") // airy cyan for directories
+	clrDir             = lipgloss.Color("68")  // darker blue for directories
+	clrDirHidden       = lipgloss.Color("60")  // dimmer blue for hidden directories
+	clrFile            = lipgloss.Color("255") // bright white for normal files
+	clrFileHidden      = lipgloss.Color("245") // dim white for hidden files
 	clrExec            = lipgloss.Color("150") // sage green for executables
 	clrMedia           = lipgloss.Color("221") // warm amber for media
 	clrDoc             = lipgloss.Color("189") // pale lilac for docs
@@ -190,7 +193,7 @@ var nerdIconByExt = map[string]string{
 
 // nerdIconByCategory is the fallback Nerd Font icon per broad category.
 var nerdIconByCategory = map[fileCategory]string{
-	catDir:    "\uf74a ", //
+	catDir:    "▸ ",
 	catImage:  "\uf1c5 ", //
 	catDoc:    "\uf15c ", //
 	catCode:   "\uf121 ", //
@@ -249,7 +252,24 @@ func fileColor(cat fileCategory) lipgloss.Style {
 	case catBinary:
 		return lipgloss.NewStyle().Foreground(clrBinary)
 	default:
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+		return lipgloss.NewStyle().Foreground(clrFile)
+	}
+}
+
+func isHiddenName(name string) bool {
+	return strings.HasPrefix(name, ".")
+}
+
+func entryNameStyle(e entry) lipgloss.Style {
+	switch {
+	case e.isDir && isHiddenName(e.name):
+		return lipgloss.NewStyle().Foreground(clrDirHidden).Bold(true)
+	case e.isDir:
+		return lipgloss.NewStyle().Foreground(clrDir).Bold(true)
+	case isHiddenName(e.name):
+		return lipgloss.NewStyle().Foreground(clrFileHidden)
+	default:
+		return lipgloss.NewStyle().Foreground(clrFile)
 	}
 }
 
@@ -850,7 +870,7 @@ func (m model) renderFileList(w, h int) string {
 			e := m.entries[i]
 			cat := categorise(e)
 			icon := fileIconExt(cat, filepath.Ext(e.name))
-			colStyle := fileColor(cat)
+			colStyle := entryNameStyle(e)
 
 			displayName := e.name
 			if e.isDir {
@@ -917,7 +937,7 @@ func (m model) renderPreviewPane(w, h int) string {
 		e := m.entries[m.selected]
 		cat := categorise(e)
 		icon := fileIconExt(cat, filepath.Ext(e.name))
-		col := fileColor(cat)
+		col := entryNameStyle(e)
 
 		name := icon + e.name
 		if e.isDir {
@@ -1551,14 +1571,14 @@ func buildDirPreview(path string) (string, error) {
 	for i := 0; i < limit; i++ {
 		e := entries[i]
 		name := e.Name()
+		fakeEntry := entry{name: name, isDir: e.IsDir()}
 		var line string
 		if e.IsDir() {
-			line = lipgloss.NewStyle().Foreground(clrDir).Render("  " + fileIconExt(catDir, "") + name + "/")
+			line = entryNameStyle(fakeEntry).Render("  " + fileIconExt(catDir, "") + name + "/")
 		} else {
-			// categorise by name only (no stat for speed)
-			fakeEntry := entry{name: name, isDir: false}
+			// Categorise by name only (no stat for speed).
 			cat := categorise(fakeEntry)
-			col := fileColor(cat)
+			col := entryNameStyle(fakeEntry)
 			line = col.Render("  " + fileIconExt(cat, filepath.Ext(name)) + name)
 		}
 		sb.WriteString(line + "\n")
