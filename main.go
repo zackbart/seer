@@ -43,26 +43,33 @@ const (
 // ── color palette ──────────────────────────────────────────────────────────────
 // A cohesive dark theme built around deep indigo / slate tones.
 var (
-	clrAccent     = lipgloss.Color("105") // soft violet – selected bg accent
-	clrAccentFg   = lipgloss.Color("231") // near-white text on accent bg
-	clrDir        = lipgloss.Color("75")  // sky blue – directories
-	clrExec       = lipgloss.Color("114") // sage green – executables / scripts
-	clrMedia      = lipgloss.Color("215") // warm amber – images / media
-	clrDoc        = lipgloss.Color("189") // light lavender – markdown / docs
-	clrConfig     = lipgloss.Color("222") // pale gold – config files
-	clrBinary     = lipgloss.Color("203") // coral – binary / unknown
-	clrSize       = lipgloss.Color("244") // medium grey – file sizes
-	clrMuted      = lipgloss.Color("240") // dark grey – decorative / dividers
-	clrDim        = lipgloss.Color("238") // very dark grey – subtle bg hints
-	clrBreadcrumb = lipgloss.Color("147") // periwinkle – path text
-	clrPathSep    = lipgloss.Color("238") // dimmer – path separators
-	clrHintKey    = lipgloss.Color("105") // violet – keybind keys
-	clrHintText   = lipgloss.Color("244") // grey – keybind descriptions
-	clrStatus     = lipgloss.Color("189") // lavender – status messages
-	clrBorder     = lipgloss.Color("237") // subtle – separator line
-	clrTitle      = lipgloss.Color("147") // periwinkle – panel titles
-	clrLoading    = lipgloss.Color("214") // orange – loading indicator
-	clrScrollbar  = lipgloss.Color("99")  // muted violet – scroll indicator
+	clrBg              = lipgloss.Color("234") // deep slate frame
+	clrSurface         = lipgloss.Color("236") // main panel fill
+	clrSurfaceAlt      = lipgloss.Color("237") // raised chrome and headers
+	clrSurfaceElevated = lipgloss.Color("239") // modal / selected emphasis
+	clrAccent          = lipgloss.Color("111") // soft electric blue accent
+	clrAccentFg        = lipgloss.Color("255") // bright text on accent
+	clrDir             = lipgloss.Color("117") // airy cyan for directories
+	clrExec            = lipgloss.Color("150") // sage green for executables
+	clrMedia           = lipgloss.Color("221") // warm amber for media
+	clrDoc             = lipgloss.Color("189") // pale lilac for docs
+	clrConfig          = lipgloss.Color("223") // sand for config files
+	clrBinary          = lipgloss.Color("210") // coral for binary / unknown
+	clrSize            = lipgloss.Color("248") // soft steel for metadata
+	clrMuted           = lipgloss.Color("245") // secondary text
+	clrDim             = lipgloss.Color("240") // dividers / low contrast text
+	clrBreadcrumb      = lipgloss.Color("189") // breadcrumb path text
+	clrPathSep         = lipgloss.Color("243") // breadcrumb separators
+	clrHintKey         = lipgloss.Color("117") // footer keycaps
+	clrHintText        = lipgloss.Color("250") // footer descriptions
+	clrStatus          = lipgloss.Color("189") // normal status copy
+	clrBorder          = lipgloss.Color("241") // default panel border
+	clrBorderStrong    = lipgloss.Color("111") // active border
+	clrTitle           = lipgloss.Color("255") // bright panel titles
+	clrLoading         = lipgloss.Color("221") // loading indicator
+	clrScrollbar       = lipgloss.Color("110") // scroll indicator
+	clrDanger          = lipgloss.Color("203") // destructive accent
+	clrDangerSoft      = lipgloss.Color("52")  // destructive surface
 )
 
 var imageExts = map[string]bool{
@@ -408,15 +415,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.requestPreview()
 			}
 			return m, m.requestPreview()
-		case "h", "left", "backspace":
+		case "h", "left":
 			if m.searching {
-				if key := msg.String(); key == "backspace" && len(m.searchQuery) > 0 {
-					runes := []rune(m.searchQuery)
-					m.searchQuery = string(runes[:len(runes)-1])
-					m.entries = m.applySearch(m.allEntries)
-					m.selected = 0
-					return m, m.requestPreview()
-				}
 				break
 			}
 			parent := filepath.Dir(m.cwd)
@@ -426,11 +426,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.requestPreview()
 			}
+		case "backspace":
+			if m.searching {
+				if len(m.searchQuery) > 0 {
+					runes := []rune(m.searchQuery)
+					m.searchQuery = string(runes[:len(runes)-1])
+					m.entries = m.applySearch(m.allEntries)
+					m.selected = 0
+					return m, m.requestPreview()
+				}
+				break
+			}
+			fallthrough
 		case "delete":
 			if len(m.entries) > 0 && m.selected < len(m.entries) {
 				m.confirmingDelete = true
 				m.deleteTarget = m.entries[m.selected].path
-				m.status = "confirm delete: y/n"
+				m.status = "confirm move to trash"
 				return m, nil
 			}
 		case ".":
@@ -581,84 +593,105 @@ func (m model) View() string {
 	// ── left pane: file list ─────────────────────────────────────────────────
 	leftPane := m.renderFileList(leftW, bodyH)
 
-	// ── vertical separator ────────────────────────────────────────────────────
-	// Render each │ independently so ANSI reset codes don't span newlines.
-	sepStyle := lipgloss.NewStyle().Foreground(clrBorder)
-	sepLine := sepStyle.Render("│")
-	sepLines := make([]string, bodyH)
-	for i := range sepLines {
-		sepLines[i] = sepLine
-	}
-	sep := strings.Join(sepLines, "\n")
-
 	// ── right pane: preview ───────────────────────────────────────────────────
 	rightPane := m.renderPreviewPane(rightW, bodyH)
 
 	// ── bottom bar ────────────────────────────────────────────────────────────
 	bottomBar := m.renderBottomBar(m.width)
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, sep, rightPane)
+	sep := lipgloss.NewStyle().
+		Width(1).
+		Height(bodyH).
+		Background(clrBg).
+		Render("")
+	body := lipgloss.NewStyle().
+		Width(m.width).
+		Background(clrBg).
+		Render(lipgloss.JoinHorizontal(lipgloss.Top, leftPane, sep, rightPane))
 
 	if m.confirmingDelete {
-		dialog := m.renderDeleteDialog(leftW + rightW + 1)
+		dialog := m.renderDeleteDialog(m.width, bodyH)
 		return topBar + "\n" + dialog + "\n" + bottomBar
 	}
 
 	return topBar + "\n" + body + "\n" + bottomBar
 }
 
-func (m model) renderDeleteDialog(width int) string {
+func (m model) renderDeleteDialog(width, height int) string {
+	dialogWidth := min(72, max(42, width-8))
 	fileName := filepath.Base(m.deleteTarget)
-	dialogWidth := min(60, width-4)
-	dialogHeight := 5
+	fileLabel := trimVisual(fileName, dialogWidth-12)
+	meta := "file"
+	if info, err := os.Stat(m.deleteTarget); err == nil {
+		if info.IsDir() {
+			meta = "folder"
+		} else {
+			meta = humanSize(info.Size())
+		}
+	}
 
-	content := fmt.Sprintf("Delete \"%s\"? [y/n]", fileName)
-	contentLen := lipgloss.Width(content)
-	padding := (dialogWidth - contentLen - 2) / 2
-	extra := (dialogWidth - contentLen - 2) % 2
+	title := lipgloss.NewStyle().
+		Foreground(clrDanger).
+		Bold(true).
+		Render("Move to Trash?")
+	nameLine := lipgloss.NewStyle().
+		Foreground(clrAccentFg).
+		Bold(true).
+		Render(fileLabel)
+	metaLine := lipgloss.NewStyle().
+		Foreground(clrMuted).
+		Render("Selected with backspace  •  " + meta)
+	hintLine := lipgloss.NewStyle().
+		Foreground(clrHintText).
+		Render("Enter or y confirms. Esc or n cancels.")
 
-	borderStyle := lipgloss.NewStyle().
+	actionPrimary := lipgloss.NewStyle().
+		Foreground(clrAccentFg).
+		Background(clrDanger).
+		Padding(0, 1).
+		Bold(true).
+		Render(" enter / y move ")
+	actionSecondary := lipgloss.NewStyle().
+		Foreground(clrHintText).
+		Background(clrSurfaceAlt).
+		Padding(0, 1).
+		Render(" esc / n cancel ")
+
+	dialogBox := lipgloss.NewStyle().
+		Width(dialogWidth).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(clrAccent).
-		Foreground(clrAccentFg)
+		BorderForeground(clrDanger).
+		Background(clrDangerSoft).
+		Padding(1, 2).
+		Render(strings.Join([]string{
+			title,
+			"",
+			nameLine,
+			metaLine,
+			"",
+			hintLine,
+			"",
+			actionPrimary + "  " + actionSecondary,
+		}, "\n"))
 
-	contentRow := borderStyle.Width(dialogWidth).Render(
-		strings.Repeat(" ", padding) + content + strings.Repeat(" ", padding+extra),
-	)
-	bottomRow := borderStyle.Width(dialogWidth).Render(
-		" y = confirm  ·  n / esc = cancel ",
-	)
+	boxLines := strings.Split(dialogBox, "\n")
+	boxHeight := len(boxLines)
+	topPad := max(0, (height-boxHeight)/2)
+	leftPad := max(0, (width-lipgloss.Width(boxLines[0]))/2)
+	bg := lipgloss.NewStyle().Width(width).Background(clrBg)
 
-	dialogBox := lipgloss.JoinVertical(
-		lipgloss.Center,
-		contentRow,
-		bottomRow,
-	)
-
-	dialogH := lipgloss.Height(dialogBox)
-	topPad := (dialogHeight - dialogH) / 2
-	bottomPad := (dialogHeight - dialogH) - topPad
-
-	lines := make([]string, 0, dialogHeight)
+	lines := make([]string, 0, height)
 	for i := 0; i < topPad; i++ {
-		lines = append(lines, strings.Repeat(" ", dialogWidth))
+		lines = append(lines, bg.Render(""))
 	}
-	lines = append(lines, dialogBox)
-	for i := 0; i < bottomPad; i++ {
-		lines = append(lines, strings.Repeat(" ", dialogWidth))
+	for _, line := range boxLines {
+		padded := strings.Repeat(" ", leftPad) + line
+		lines = append(lines, bg.Render(padded))
 	}
-
-	dialogStr := lipgloss.JoinVertical(lipgloss.Center, lines...)
-	dialogStr = borderStyle.Padding(0, 1).Render(dialogStr)
-
-	sidePad := (width - dialogWidth - 2) / 2
-
-	allLines := strings.Split(dialogStr, "\n")
-	result := make([]string, 0, dialogHeight)
-	for _, line := range allLines {
-		result = append(result, strings.Repeat(" ", sidePad)+line)
+	for len(lines) < height {
+		lines = append(lines, bg.Render(""))
 	}
-	return lipgloss.JoinVertical(lipgloss.Top, result...)
+	return strings.Join(lines[:height], "\n")
 }
 
 // renderTopBar draws the full-width breadcrumb path bar.
@@ -735,41 +768,58 @@ func (m model) renderTopBar(width int) string {
 
 	return lipgloss.NewStyle().
 		Width(width).
-		Background(clrDim).
-		PaddingLeft(1).
+		Background(clrSurfaceAlt).
+		Foreground(clrAccentFg).
+		BorderBottom(true).
+		BorderForeground(clrBorder).
+		Padding(0, 1).
 		Render(inner)
 }
 
 // renderFileList draws the left pane with icons, names, sizes, and mod times.
 func (m model) renderFileList(w, h int) string {
+	paneStyle := lipgloss.NewStyle().
+		Width(w).
+		Height(h).
+		Background(clrSurface).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(clrBorder)
+	innerW := max(8, w-2)
+	innerH := max(3, h-2)
+
 	// Column layout within the left pane:
 	//   [icon+name ............ size  ]
 	// Size column is 9 chars wide ("1023.9 KB" = 9 chars max), separated by a space.
 	sizeW := 9
-	nameW := max(8, w-sizeW-1)
+	nameW := max(8, innerW-sizeW-3)
 
 	mutedStyle := lipgloss.NewStyle().Foreground(clrMuted)
-	dimStyle := lipgloss.NewStyle().Foreground(clrDim)
 
-	lines := make([]string, 0, h)
+	lines := make([]string, 0, innerH)
 
 	// Panel title
 	titleStyle := lipgloss.NewStyle().Foreground(clrTitle).Bold(true)
-	title := titleStyle.Render("files")
-	titleLine := lipgloss.NewStyle().Width(w).Background(clrDim).PaddingLeft(1).Render(title)
+	countStyle := lipgloss.NewStyle().Foreground(clrMuted)
+	title := titleStyle.Render("Explorer")
+	count := countStyle.Render(fmt.Sprintf("%d", len(m.entries)))
+	titleGap := innerW - lipgloss.Width(title) - lipgloss.Width(count)
+	if titleGap < 1 {
+		titleGap = 1
+	}
+	titleLine := lipgloss.NewStyle().
+		Width(innerW).
+		Background(clrSurfaceAlt).
+		Padding(0, 1).
+		Render(title + strings.Repeat(" ", titleGap-1) + count)
 	lines = append(lines, titleLine)
-
-	// Divider
-	divider := dimStyle.Render(strings.Repeat("─", max(1, w)))
-	lines = append(lines, divider)
 
 	if len(m.entries) == 0 {
 		lines = append(lines, mutedStyle.Render("  (empty directory)"))
 	} else {
 		scrollStyle := lipgloss.NewStyle().Foreground(clrScrollbar)
 
-		// Total rows available for file rows + scroll indicators (title+divider already added)
-		listH := h - 2
+		// Total rows available for file rows + scroll indicators below the header.
+		listH := innerH - 1
 		if listH < 1 {
 			listH = 1
 		}
@@ -826,14 +876,15 @@ func (m model) renderFileList(w, h int) string {
 			sizeField := fmt.Sprintf("%*s", sizeW, sizeStr)
 
 			if i == m.selected {
-				// Selected row: full-width highlight using visual width
+				// Selected row: full-width highlight using visual width.
 				selBg := lipgloss.NewStyle().
 					Foreground(clrAccentFg).
 					Background(clrAccent).
-					Bold(true)
+					Bold(true).
+					Padding(0, 1)
 				// Measure the raw visual width of icon+name, pad to fill name column
 				entryVisW := lipgloss.Width(rawEntry)
-				nameColW := w - sizeW
+				nameColW := innerW - sizeW - 2
 				padding := ""
 				if entryVisW < nameColW {
 					padding = strings.Repeat(" ", nameColW-entryVisW)
@@ -843,7 +894,7 @@ func (m model) renderFileList(w, h int) string {
 				lines = append(lines, row)
 			} else {
 				nameField := trimVisual(rawEntry, nameW)
-				namePart := colStyle.Render(nameField)
+				namePart := lipgloss.NewStyle().PaddingLeft(1).Inherit(colStyle).Render(nameField)
 				sizePart := lipgloss.NewStyle().Foreground(clrSize).Render(sizeField)
 				lines = append(lines, namePart+sizePart)
 			}
@@ -854,12 +905,20 @@ func (m model) renderFileList(w, h int) string {
 		}
 	}
 
-	pane := lipgloss.NewStyle().Width(w).Height(h).Render(strings.Join(lines, "\n"))
-	return pane
+	return paneStyle.Render(strings.Join(lines, "\n"))
 }
 
 // renderPreviewPane draws the right pane with header and preview content.
 func (m model) renderPreviewPane(w, h int) string {
+	paneStyle := lipgloss.NewStyle().
+		Width(w).
+		Height(h).
+		Background(clrSurface).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(clrBorderStrong)
+	innerW := max(12, w-2)
+	innerH := max(3, h-2)
+
 	dimStyle := lipgloss.NewStyle().Foreground(clrDim)
 	mutedStyle := lipgloss.NewStyle().Foreground(clrMuted)
 
@@ -893,8 +952,8 @@ func (m model) renderPreviewPane(w, h int) string {
 	}
 
 	// Compose header line
-	headerLineStyle := lipgloss.NewStyle().Width(w).Background(clrDim).PaddingLeft(1)
-	gap := w - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight) - 2 // 2 for padding
+	headerLineStyle := lipgloss.NewStyle().Width(innerW).Background(clrSurfaceAlt).Padding(0, 1)
+	gap := innerW - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight) - 2 // 2 for padding
 	if gap < 1 {
 		gap = 1
 	}
@@ -903,10 +962,10 @@ func (m model) renderPreviewPane(w, h int) string {
 	)
 
 	// ── divider ──────────────────────────────────────────────────────────────
-	divider := dimStyle.Render(strings.Repeat("─", max(1, w)))
+	divider := dimStyle.Render(strings.Repeat("─", max(1, innerW)))
 
 	// ── preview body ─────────────────────────────────────────────────────────
-	previewH := h - 2 // subtract header + divider
+	previewH := innerH - 2 // subtract header + divider
 	if previewH < 1 {
 		previewH = 1
 	}
@@ -942,16 +1001,16 @@ func (m model) renderPreviewPane(w, h int) string {
 	if w > 0 {
 		rawLines := strings.Split(sliced, "\n")
 		for i, line := range rawLines {
-			if lipgloss.Width(line) > w {
-				rawLines[i] = truncate.String(line, uint(w))
+			if lipgloss.Width(line) > innerW {
+				rawLines[i] = truncate.String(line, uint(innerW))
 			}
 		}
 		sliced = strings.Join(rawLines, "\n")
 	}
 
-	body := lipgloss.NewStyle().Width(w).Height(previewH).Render(sliced)
+	body := lipgloss.NewStyle().Width(innerW).Height(previewH).Render(sliced)
 
-	return headerLine + "\n" + divider + "\n" + body
+	return paneStyle.Render(headerLine + "\n" + divider + "\n" + body)
 }
 
 // renderBottomBar draws the two-line footer: status + keybindings.
@@ -965,8 +1024,10 @@ func (m model) renderBottomBar(width int) string {
 		prompt := searchStyle.Render("/ ") + queryStyle.Render(m.searchQuery) + cursor
 		statusLine = lipgloss.NewStyle().
 			Width(width).
-			Background(clrDim).
-			PaddingLeft(1).
+			Background(clrSurfaceAlt).
+			BorderTop(true).
+			BorderForeground(clrBorder).
+			Padding(0, 1).
 			Render(prompt)
 	} else {
 		statusIcon := "●"
@@ -983,8 +1044,10 @@ func (m model) renderBottomBar(width int) string {
 		statusText = trimVisual(statusText, maxStatusW)
 		statusLine = lipgloss.NewStyle().
 			Width(width).
-			Background(clrDim).
-			PaddingLeft(1).
+			Background(clrSurfaceAlt).
+			BorderTop(true).
+			BorderForeground(clrBorder).
+			Padding(0, 1).
 			Render(statusStyle.Render(statusIcon + " " + statusText))
 	}
 
@@ -1003,6 +1066,7 @@ func (m model) renderBottomBar(width int) string {
 			{"g/G", "top/end"},
 			{"enter/l", "open"},
 			{"h", "up"},
+			{"backspace", "trash"},
 			{"/", "search"},
 			{".", "hidden"},
 			{"^d/u", "scroll"},
@@ -1040,8 +1104,8 @@ func (m model) renderBottomBar(width int) string {
 	}
 	keysLine := lipgloss.NewStyle().
 		Width(width).
-		Background(clrDim).
-		PaddingLeft(1).
+		Background(clrBg).
+		Padding(0, 1).
 		Render(strings.Join(parts, ""))
 
 	return statusLine + "\n" + keysLine
@@ -1116,18 +1180,18 @@ func (m model) isInPreviewPane(x, y int) bool {
 	leftW, rightW, bodyH := m.layoutDimensions()
 	previewStartX := leftW + 1
 	previewEndX := previewStartX + rightW - 1
-	previewStartY := 3 // top bar + body header
-	previewEndY := previewStartY + bodyH - 1
+	previewStartY := 1 // top bar
+	previewEndY := previewStartY + bodyH
 
 	return x >= previewStartX && x <= previewEndX && y >= previewStartY && y <= previewEndY
 }
 
 func (m model) previewBodyRect() (startX, startY, width, height int) {
 	leftW, rightW, bodyH := m.layoutDimensions()
-	startX = leftW + 1
+	startX = leftW + 2
 	startY = 3
-	width = max(1, rightW)
-	height = max(1, bodyH-2)
+	width = max(1, rightW-2)
+	height = max(1, bodyH-4)
 	return
 }
 
@@ -1415,7 +1479,7 @@ func (m *model) clampPreviewOffset() {
 
 func (m model) previewViewportHeight() int {
 	bodyH := max(4, m.height-4)
-	return max(1, bodyH-2)
+	return max(1, bodyH-4)
 }
 
 // ── preview builders ──────────────────────────────────────────────────────────
