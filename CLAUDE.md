@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-Seer is a Go TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. The entire application lives in a single file: `main.go`.
+Seer is a Go TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi.
 
 ## Tech Stack
 
-- **Go 1.25.0** — single `package main`, no sub-packages
+- **Go 1.25.0** — `package main`, no sub-packages
 - **charmbracelet/bubbletea** — TUI framework (Elm Architecture: Model/Update/View)
 - **charmbracelet/lipgloss** — terminal styling
 - **charmbracelet/glamour** — Markdown rendering (tokyo-night style)
@@ -33,12 +33,24 @@ No linter config, no CI pipeline, no Makefile.
 
 ## Architecture
 
-Everything is in `main.go` (~2700 lines), following the Bubble Tea Elm Architecture:
+The codebase is split across focused files, all in `package main`, following the Bubble Tea Elm Architecture:
 
-- **`model` struct** — all application state (cwd, entries, preview, cache, search, etc.)
-- **`Init()`** — fires initial preview request
-- **`Update(msg)`** — handles keyboard, mouse, resize, and async preview messages
-- **`View()`** — renders the full terminal frame
+| File | Contents |
+|---|---|
+| `main.go` | Entry point, `--version`/`--help` flags |
+| `types.go` | Constants, `entry`, `model` struct, message types |
+| `theme.go` | Color palette, icons, file categorisation, styling helpers |
+| `model.go` | `initialModel()`, `Init()`, `Update()` — core Elm loop |
+| `view.go` | `View()` and all `render*` methods |
+| `layout.go` | Layout math, text truncation helpers, preview selection |
+| `model_ops.go` | Model mutations: navigation, cache, search, preview request |
+| `clipboard.go` | OS clipboard integration |
+| `fs.go` | `listDir()`, `moveToTrash()`, file utilities |
+| `util.go` | `humanSize()`, `min()`, `max()`, `previewPageSize()` |
+| `preview.go` | `buildPreview()` dispatch, dir/image/markdown/code/highlight |
+| `preview_image.go` | Truecolor and ASCII image rendering |
+| `preview_json.go` | Colorised JSON pretty-printer |
+| `preview_mermaid.go` | Mermaid flowchart + sequence diagram ASCII renderers |
 
 ### Key Patterns
 
@@ -54,7 +66,7 @@ Everything is in `main.go` (~2700 lines), following the Bubble Tea Elm Architect
 
 ## Coding Conventions
 
-- Single-file architecture — all code in `main.go`, `package main`
+- All code in `package main`, no sub-packages
 - Section separators: `// ── section name ────────────────`
 - Dark indigo/slate color palette using 256-color terminal indices
 - No named return values (except `layoutDimensions()`)
@@ -69,37 +81,21 @@ Everything is in `main.go` (~2700 lines), following the Bubble Tea Elm Architect
 | `COLORTERM=truecolor` | Enable truecolor image preview |
 | `NO_COLOR` | Disable truecolor image rendering |
 
-## Issue Tracking
-
-This project uses `bd` (beads) for issue tracking.
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --status in_progress  # Claim work
-bd close <id>         # Complete work
-bd sync               # Sync with git
-```
-
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
 
 **MANDATORY WORKFLOW:**
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
+1. **Run quality gates** (if code changed) — `go fmt ./...`, `go vet ./...`, `go build .`
+2. **PUSH TO REMOTE** — This is MANDATORY:
    ```bash
    git pull --rebase
-   bd sync
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
+3. **Verify** — All changes committed AND pushed
+4. **Hand off** — Provide context for next session
 
 **CRITICAL RULES:**
 - Work is NOT complete until `git push` succeeds
