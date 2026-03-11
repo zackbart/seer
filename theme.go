@@ -122,7 +122,7 @@ var nerdIconByExt = map[string]string{
 
 // nerdIconByCategory is the fallback Nerd Font icon per broad category.
 var nerdIconByCategory = map[fileCategory]string{
-	catDir:    "▸ ",
+	catDir:    "\uf07b ", //
 	catImage:  "\uf1c5 ", //
 	catDoc:    "\uf15c ", //
 	catCode:   "\uf121 ", //
@@ -223,6 +223,6 @@ func entryNameStyle(e entry) lipgloss.Style {
 	case isHiddenName(e.name):
 		return lipgloss.NewStyle().Foreground(clrFileHidden)
 	default:
-		return lipgloss.NewStyle().Foreground(clrFile)
+		return fileColor(categorise(e))
 	}
 }

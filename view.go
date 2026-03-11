@@ -209,6 +209,7 @@ func (m model) renderTopBar(width int) string {
 
 	return lipgloss.NewStyle().
 		Width(width).
+		Background(clrSurface).
 		Padding(0, 1).
 		Render(inner)
 }
@@ -244,6 +245,7 @@ func (m model) renderFileList(w, h int) string {
 	}
 	titleLine := lipgloss.NewStyle().
 		Width(innerW).
+		Background(clrSurfaceAlt).
 		Render(title + strings.Repeat(" ", titleGap) + count)
 	lines = append(lines, titleLine)
 	lines = append(lines, lipgloss.NewStyle().Foreground(clrDim).Render(strings.Repeat("─", innerW)))
@@ -311,21 +313,21 @@ func (m model) renderFileList(w, h int) string {
 			sizeField := fmt.Sprintf("%*s", sizeW, sizeStr)
 
 			if i == m.selected {
-				// Selected row: full-width highlight using visual width.
+				// Selected row: accent-bar gutter + elevated highlight.
+				marker := lipgloss.NewStyle().Foreground(clrAccent).Render("▌")
 				selBg := lipgloss.NewStyle().
 					Foreground(clrAccentFg).
-					Background(clrAccent).
-					Bold(true).
-					Padding(0, 1)
-				// Measure the raw visual width of icon+name, pad to fill name column
+					Background(clrSurfaceElevated).
+					Bold(true)
 				entryVisW := lipgloss.Width(rawEntry)
+				// gutter(1) + right-space(1) already accounted for by sizeW+2
 				nameColW := innerW - sizeW - 2
-				padding := ""
+				rowPadding := ""
 				if entryVisW < nameColW {
-					padding = strings.Repeat(" ", nameColW-entryVisW)
+					rowPadding = strings.Repeat(" ", nameColW-entryVisW)
 				}
 				namepart := trimVisual(rawEntry, nameColW)
-				row := selBg.Render(namepart + padding + sizeField)
+				row := marker + selBg.Render(namepart+rowPadding+sizeField+" ")
 				lines = append(lines, row)
 			} else {
 				nameField := trimVisual(rawEntry, nameW)
@@ -386,7 +388,7 @@ func (m model) renderPreviewPane(w, h int) string {
 	}
 
 	// Compose header line; drop headerRight if it wouldn't fit.
-	headerLineStyle := lipgloss.NewStyle().Width(innerW)
+	headerLineStyle := lipgloss.NewStyle().Width(innerW).Background(clrSurfaceAlt)
 	gap := innerW - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
 	var headerLine string
 	if gap >= 1 {
@@ -458,6 +460,7 @@ func (m model) renderBottomBar(width int) string {
 		prompt := searchStyle.Render("/ ") + queryStyle.Render(m.searchQuery) + cursor
 		statusLine = lipgloss.NewStyle().
 			Width(width).
+			Background(clrSurface).
 			Padding(0, 1).
 			Render(prompt)
 	} else {
@@ -476,6 +479,7 @@ func (m model) renderBottomBar(width int) string {
 		statusText = trimVisual(statusText, maxStatusW)
 		statusLine = lipgloss.NewStyle().
 			Width(width).
+			Background(clrSurface).
 			Padding(0, 1).
 			Render(statusStyle.Render(statusIcon + " " + statusText))
 	}
@@ -534,6 +538,7 @@ func (m model) renderBottomBar(width int) string {
 	}
 	keysLine := lipgloss.NewStyle().
 		Width(width).
+		Background(clrSurface).
 		Padding(0, 1).
 		Render(strings.Join(parts, ""))
 
