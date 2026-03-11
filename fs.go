@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -45,37 +46,42 @@ func listDir(path string, showHidden bool) ([]entry, error) {
 	return entries, nil
 }
 
-func moveToTrash(path string) error {
+func trashDir() (string, error) {
 	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	var dir string
+	if runtime.GOOS == "linux" {
+		dir = filepath.Join(homeDir, ".local", "share", "Trash", "files")
+	} else {
+		dir = filepath.Join(homeDir, ".Trash")
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+func moveToTrash(path string) error {
+	trashPath, err := trashDir()
 	if err != nil {
 		return err
 	}
-	trashPath := filepath.Join(homeDir, ".Trash")
-	info, err := os.Stat(path)
-	if err != nil {
+	if _, err := os.Stat(path); err != nil {
 		return err
 	}
 	baseName := filepath.Base(path)
+	ext := filepath.Ext(baseName)
+	stem := strings.TrimSuffix(baseName, ext)
+
+	// Try the bare name first, then add a numeric suffix on collision.
 	destPath := filepath.Join(trashPath, baseName)
-	if info.IsDir() {
-		for i := 1; ; i++ {
-			testPath := filepath.Join(trashPath, fmt.Sprintf("%s %d", baseName, i))
-			if _, err := os.Stat(testPath); os.IsNotExist(err) {
-				destPath = testPath
-				break
-			}
+	for i := 1; ; i++ {
+		if _, err := os.Stat(destPath); os.IsNotExist(err) {
+			break
 		}
-	} else {
-		ext := filepath.Ext(baseName)
-		stem := strings.TrimSuffix(baseName, ext)
-		for i := 1; ; i++ {
-			testName := fmt.Sprintf("%s %d%s", stem, i, ext)
-			testPath := filepath.Join(trashPath, testName)
-			if _, err := os.Stat(testPath); os.IsNotExist(err) {
-				destPath = testPath
-				break
-			}
-		}
+		destPath = filepath.Join(trashPath, fmt.Sprintf("%s %d%s", stem, i, ext))
 	}
 	return os.Rename(path, destPath)
 }

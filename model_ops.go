@@ -72,7 +72,7 @@ func (m *model) requestPreview() tea.Cmd {
 	m.loading = true
 	path := picked.path
 	_, rightW, bodyH := m.layoutDimensions()
-	width := max(40, rightW)
+	width := max(40, rightW-2) // -2 for pane border; preview renders at innerW
 	height := max(8, bodyH)
 
 	return func() tea.Msg {
@@ -123,4 +123,3 @@ func (m model) previewViewportHeight() int {
 	bodyH := max(4, m.height-4)
 	return max(1, bodyH-4)
 }
-

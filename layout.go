@@ -109,7 +109,8 @@ func (m model) isInPreviewPane(x, y int) bool {
 func (m model) previewBodyRect() (startX, startY, width, height int) {
 	leftW, rightW, bodyH := m.layoutDimensions()
 	startX = leftW + 2
-	startY = 3
+	// y=0: top bar, y=1: pane top border, y=2: header, y=3: divider, y=4: body start
+	startY = 4
 	width = max(1, rightW-2)
 	height = max(1, bodyH-4)
 	return
