@@ -198,9 +198,10 @@ func (m model) renderTopBar(width int) string {
 		breadcrumb = ellipsis + sepStyle.Render(" › ") + strings.Join(kept, sepStyle.Render(" › "))
 	}
 
-	// Compose bar: breadcrumb left, count right
+	// Compose bar: breadcrumb left, count right.
+	// Padding(0,1) consumes 1 char on each side, leaving width-2 for content.
 	breadcrumbW := lipgloss.Width(breadcrumb)
-	gap := width - 1 - breadcrumbW - countW // 1 = left padding
+	gap := width - 2 - breadcrumbW - countW
 	if gap < 1 {
 		gap = 1
 	}
@@ -384,15 +385,15 @@ func (m model) renderPreviewPane(w, h int) string {
 		headerLeft = mutedStyle.Render("no selection")
 	}
 
-	// Compose header line
+	// Compose header line; drop headerRight if it wouldn't fit.
 	headerLineStyle := lipgloss.NewStyle().Width(innerW)
 	gap := innerW - lipgloss.Width(headerLeft) - lipgloss.Width(headerRight)
-	if gap < 1 {
-		gap = 1
+	var headerLine string
+	if gap >= 1 {
+		headerLine = headerLineStyle.Render(headerLeft + strings.Repeat(" ", gap) + headerRight)
+	} else {
+		headerLine = headerLineStyle.Render(headerLeft)
 	}
-	headerLine := headerLineStyle.Render(
-		headerLeft + strings.Repeat(" ", gap) + headerRight,
-	)
 
 	// ── divider ──────────────────────────────────────────────────────────────
 	divider := dimStyle.Render(strings.Repeat("─", max(1, innerW)))
@@ -467,7 +468,8 @@ func (m model) renderBottomBar(width int) string {
 			statusIcon = "◆"
 			statusStyle = lipgloss.NewStyle().Foreground(clrExec)
 		}
-		maxStatusW := width - 3
+		// icon(1) + space(1) + text + Padding(0,1)(2) must fit in width → text ≤ width-4
+		maxStatusW := width - 4
 		if maxStatusW < 1 {
 			maxStatusW = 1
 		}
@@ -494,6 +496,7 @@ func (m model) renderBottomBar(width int) string {
 			{"enter/l", "open"},
 			{"h", "up"},
 			{"backspace", "trash"},
+			{"p", "copy path"},
 			{"/", "search"},
 			{".", "hidden"},
 			{"^d/u", "scroll"},
