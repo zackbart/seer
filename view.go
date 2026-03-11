@@ -56,7 +56,18 @@ func (m model) renderDeleteDialog(width, height int) string {
 	meta := "file"
 	if info, err := os.Stat(m.deleteTarget); err == nil {
 		if info.IsDir() {
-			meta = "folder"
+			if children, err := os.ReadDir(m.deleteTarget); err == nil {
+				switch len(children) {
+				case 0:
+					meta = "empty folder"
+				case 1:
+					meta = "folder  •  1 item"
+				default:
+					meta = fmt.Sprintf("folder  •  %d items", len(children))
+				}
+			} else {
+				meta = "folder"
+			}
 		} else {
 			meta = humanSize(info.Size())
 		}

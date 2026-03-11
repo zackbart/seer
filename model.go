@@ -75,6 +75,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.confirmingDelete = false
 				m.deleteTarget = ""
+				m.preview = ""
 				return m, m.requestPreview()
 			}
 			if key == "n" || key == "N" || key == "esc" {
@@ -199,6 +200,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+u", "pageup":
 			m.previewOffset -= previewPageSize(m.height)
 			m.clampPreviewOffset()
+		case "p":
+			if len(m.entries) > 0 && m.selected < len(m.entries) {
+				p := m.entries[m.selected].path
+				if err := copyToClipboard(p); err != nil {
+					m.status = "copy failed: " + err.Error()
+				} else {
+					m.status = fmt.Sprintf("copied path: %s", p)
+				}
+			}
 		case "r":
 			entries, err := listDir(m.cwd, m.showHidden)
 			if err != nil {
