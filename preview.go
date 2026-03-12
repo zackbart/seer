@@ -30,11 +30,19 @@ func buildPreview(path string, width, height int) (string, error) {
 	}
 
 	ext := strings.ToLower(filepath.Ext(path))
+
+	// Image files.
 	if imageExts[ext] {
 		if img, ok := imagePreview(path, width, height); ok {
 			return img, nil
 		}
-		return fmt.Sprintf("image file: %s\nsize: %s\n\npreview unavailable for this format", filepath.Base(path), humanSize(info.Size())), nil
+		return fmt.Sprintf("image file: %s\nsize: %s\n\npreview unavailable for this format",
+			filepath.Base(path), humanSize(info.Size())), nil
+	}
+
+	// Archive files.
+	if archiveExts[ext] {
+		return buildArchivePreview(path)
 	}
 
 	f, err := os.Open(path)
@@ -50,39 +58,48 @@ func buildPreview(path string, width, height int) (string, error) {
 	}
 	buf = buf[:n]
 
+	// Binary files → hex dump.
 	if isLikelyBinary(buf) {
-		return fmt.Sprintf("binary file: %s\nsize: %s\nmodified: %s", filepath.Base(path), humanSize(info.Size()), info.ModTime().Format("02 Jan 2006 15:04 MST")), nil
+		return buildHexPreview(buf, info), nil
 	}
 
 	text := string(buf)
 	if !utf8.ValidString(text) {
-		return fmt.Sprintf("non-utf8 text file: %s\nsize: %s", filepath.Base(path), humanSize(info.Size())), nil
+		return buildHexPreview(buf, info), nil
 	}
-	// Normalize Windows-style line endings so \r doesn't corrupt terminal rendering.
+	// Normalize line endings.
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
 
+	truncated := n == maxPreviewBytes
+
 	switch ext {
 	case ".md", ".markdown", ".mdx":
-		return renderMarkdownPreview(text, width, n == maxPreviewBytes), nil
+		return renderMarkdownPreview(text, width, truncated), nil
 	case ".mmd", ".mermaid":
 		return renderMermaidNative(text), nil
 	case ".json":
-		return renderJSONPreview(text, n == maxPreviewBytes), nil
+		return renderJSONPreview(text, truncated), nil
+	case ".csv":
+		return renderCSVPreview(text, ',', width, truncated), nil
+	case ".tsv":
+		return renderCSVPreview(text, '\t', width, truncated), nil
 	}
 
 	if highlighted := highlight(path, text); highlighted != "" {
-		if n == maxPreviewBytes {
+		if truncated {
 			highlighted += "\n\n... preview truncated ..."
 		}
 		return highlighted, nil
 	}
 
-	if n == maxPreviewBytes {
+	if truncated {
 		text += "\n\n... preview truncated ..."
 	}
 	return text, nil
 }
+
+// ── directory preview ─────────────────────────────────────────────────────────
 
 func buildDirPreview(path string) (string, error) {
 	entries, err := os.ReadDir(path)
@@ -90,7 +107,6 @@ func buildDirPreview(path string) (string, error) {
 		return "", err
 	}
 
-	// Styled directory preview
 	dirStyle := lipgloss.NewStyle().Foreground(clrDir).Bold(true)
 	mutedStyle := lipgloss.NewStyle().Foreground(clrMuted)
 	dimStyle := lipgloss.NewStyle().Foreground(clrDim)
@@ -109,7 +125,6 @@ func buildDirPreview(path string) (string, error) {
 		if e.IsDir() {
 			line = entryNameStyle(fakeEntry).Render("  " + fileIconExt(catDir, "") + name + "/")
 		} else {
-			// Categorise by name only (no stat for speed).
 			cat := categorise(fakeEntry)
 			col := entryNameStyle(fakeEntry)
 			line = col.Render("  " + fileIconExt(cat, filepath.Ext(name)) + name)
@@ -122,6 +137,8 @@ func buildDirPreview(path string) (string, error) {
 
 	return strings.TrimRight(sb.String(), "\n"), nil
 }
+
+// ── image preview ─────────────────────────────────────────────────────────────
 
 func imagePreview(path string, width, height int) (string, bool) {
 	f, err := os.Open(path)
@@ -142,6 +159,8 @@ func imagePreview(path string, width, height int) (string, bool) {
 	return rendered, true
 }
 
+// ── markdown preview ──────────────────────────────────────────────────────────
+
 func renderMarkdownPreview(markdown string, width int, truncated bool) string {
 	prepared := replaceMermaidFences(markdown)
 	rendered := prepared
@@ -156,13 +175,13 @@ func renderMarkdownPreview(markdown string, width int, truncated bool) string {
 			rendered = out
 		}
 	}
-
 	if truncated {
 		rendered += "\n\n... preview truncated ..."
 	}
-
 	return rendered
 }
+
+// ── syntax highlighting ───────────────────────────────────────────────────────
 
 func highlight(path, text string) string {
 	lexer := lexers.Match(path)

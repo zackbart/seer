@@ -6,39 +6,120 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// ── directory navigation ──────────────────────────────────────────────────────
+
+// changeDir navigates to path, pushing it onto the history stack.
 func (m *model) changeDir(path string) error {
+	return m.changeDirInternal(path, true)
+}
+
+// changeDirNoHistory navigates to path without modifying history (used for
+// back/forward history traversal).
+func (m *model) changeDirNoHistory(path string) error {
+	return m.changeDirInternal(path, false)
+}
+
+func (m *model) changeDirInternal(path string, pushHistory bool) error {
 	entries, err := listDir(path, m.showHidden)
 	if err != nil {
 		return err
 	}
 	m.cwd = path
-	m.allEntries = entries
-	m.entries = entries
+	m.allEntries = applySort(entries, m.sortBy)
+	m.entries = m.applySearch(m.allEntries)
 	m.selected = 0
 	m.previewOffset = 0
 	m.searchQuery = ""
 	m.searching = false
 	m.status = path
+	m.multiSelected = make(map[string]bool)
+
+	if pushHistory {
+		// Truncate any forward history, then append.
+		if m.historyPos < len(m.dirHistory)-1 {
+			m.dirHistory = m.dirHistory[:m.historyPos+1]
+		}
+		// Avoid duplicate consecutive entries.
+		if len(m.dirHistory) == 0 || m.dirHistory[len(m.dirHistory)-1] != path {
+			m.dirHistory = append(m.dirHistory, path)
+		}
+		m.historyPos = len(m.dirHistory) - 1
+	}
 	return nil
 }
 
-// applySearch filters entries by the current searchQuery (case-insensitive substring).
+// navigate sets the selected index, resets the preview scroll, and returns a
+// requestPreview command.  It is the single canonical way to change selection.
+func (m *model) navigate(idx int) tea.Cmd {
+	m.selected = idx
+	m.previewOffset = 0
+	return m.requestPreview()
+}
+
+// reloadDir refreshes the current directory listing without changing cwd or history.
+func (m *model) reloadDir() error {
+	entries, err := listDir(m.cwd, m.showHidden)
+	if err != nil {
+		return err
+	}
+
+	// Preserve selection by name.
+	var prevName string
+	if m.selected < len(m.entries) {
+		prevName = m.entries[m.selected].name
+	}
+
+	m.allEntries = applySort(entries, m.sortBy)
+	m.entries = m.applySearch(m.allEntries)
+
+	// Restore selection.
+	m.selected = 0
+	for i, e := range m.entries {
+		if e.name == prevName {
+			m.selected = i
+			break
+		}
+	}
+	if m.selected >= len(m.entries) {
+		m.selected = max(0, len(m.entries)-1)
+	}
+	return nil
+}
+
+// ── search / filter ───────────────────────────────────────────────────────────
+
+// applySearch filters entries by the current searchQuery using fuzzy matching.
 // Returns all entries unchanged when the query is empty.
 func (m model) applySearch(entries []entry) []entry {
 	if m.searchQuery == "" {
 		return entries
 	}
-	q := strings.ToLower(m.searchQuery)
 	var out []entry
 	for _, e := range entries {
-		if strings.Contains(strings.ToLower(e.name), q) {
+		if fuzzyMatch(e.name, m.searchQuery) {
 			out = append(out, e)
 		}
 	}
 	return out
 }
 
-// cacheSet stores a preview result and evicts the oldest entry when the cache
+// fuzzyMatch returns true when all runes of query appear in name in order
+// (case-insensitive).  This is the same algorithm used by fzf / telescope.
+func fuzzyMatch(name, query string) bool {
+	name = strings.ToLower(name)
+	query = strings.ToLower(query)
+	qi := 0
+	for i := 0; i < len(name) && qi < len(query); i++ {
+		if name[i] == query[qi] {
+			qi++
+		}
+	}
+	return qi == len(query)
+}
+
+// ── preview cache ─────────────────────────────────────────────────────────────
+
+// cacheSet stores a preview result, evicting the oldest entry when the cache
 // exceeds previewCacheMax entries.
 func (m *model) cacheSet(key, value string) {
 	if _, exists := m.cache[key]; !exists {
@@ -51,6 +132,8 @@ func (m *model) cacheSet(key, value string) {
 		delete(m.cache, oldest)
 	}
 }
+
+// ── preview request ───────────────────────────────────────────────────────────
 
 func (m *model) requestPreview() tea.Cmd {
 	if len(m.entries) == 0 {
@@ -72,7 +155,7 @@ func (m *model) requestPreview() tea.Cmd {
 	m.loading = true
 	path := picked.path
 	_, rightW, bodyH := m.layoutDimensions()
-	width := max(40, rightW-2) // -2 for pane border; preview renders at innerW
+	width := max(40, rightW-2)
 	height := max(8, bodyH)
 
 	return func() tea.Msg {
@@ -85,6 +168,8 @@ func (m *model) requestPreview() tea.Cmd {
 		}
 	}
 }
+
+// ── preview viewport ──────────────────────────────────────────────────────────
 
 func (m *model) slicePreview(in string, h int) string {
 	if h <= 0 {
@@ -122,4 +207,44 @@ func (m *model) clampPreviewOffset() {
 func (m model) previewViewportHeight() int {
 	bodyH := max(4, m.height-4)
 	return max(1, bodyH-4)
+}
+
+// ── bookmarks ────────────────────────────────────────────────────────────────
+
+// toggleBookmark adds or removes the current cwd from the bookmarks list.
+// Returns the slot number (1-based) and whether it was added (true) or removed (false).
+func (m *model) toggleBookmark() (slot int, added bool) {
+	for i, bm := range m.bookmarks {
+		if bm == m.cwd {
+			// Remove it.
+			m.bookmarks = append(m.bookmarks[:i], m.bookmarks[i+1:]...)
+			return i + 1, false
+		}
+	}
+	// Add to end (up to 9).
+	if len(m.bookmarks) >= 9 {
+		// Replace oldest (slot 1) by shifting.
+		m.bookmarks = append(m.bookmarks[1:], m.cwd)
+		return 9, true
+	}
+	m.bookmarks = append(m.bookmarks, m.cwd)
+	return len(m.bookmarks), true
+}
+
+// ── multi-select helpers ──────────────────────────────────────────────────────
+
+// selectedPaths returns the paths to operate on: multi-selected if any,
+// otherwise the current cursor entry.
+func (m model) selectedPaths() []string {
+	if len(m.multiSelected) > 0 {
+		paths := make([]string, 0, len(m.multiSelected))
+		for p := range m.multiSelected {
+			paths = append(paths, p)
+		}
+		return paths
+	}
+	if len(m.entries) > 0 && m.selected < len(m.entries) {
+		return []string{m.entries[m.selected].path}
+	}
+	return nil
 }

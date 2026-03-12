@@ -60,7 +60,7 @@ func TestFitMermaidLabel(t *testing.T) {
 	}{
 		{"", "node"},
 		{"short", "short"},
-		{"exactly twenty four!", "exactly twenty four!"},        // 20 chars < 24
+		{"exactly twenty four!", "exactly twenty four!"},                             // 20 chars < 24
 		{"this is a very long label that exceeds limit", "this is a very long lab~"}, // truncated at byte 23
 	}
 	for _, tc := range tests {

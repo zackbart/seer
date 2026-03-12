@@ -41,6 +41,7 @@ var (
 	clrScrollbar       = lipgloss.Color("110") // scroll indicator
 	clrDanger          = lipgloss.Color("203") // destructive accent
 	clrDangerSoft      = lipgloss.Color("52")  // destructive surface
+	clrSymlink         = lipgloss.Color("80")  // cyan for symlinks
 )
 
 var imageExts = map[string]bool{
@@ -167,6 +168,14 @@ func categorise(e entry) fileCategory {
 	return catOther
 }
 
+// symlinkIcon returns the icon for a symbolic link.
+func symlinkIcon() string {
+	if nerdFonts {
+		return "\uf0c1 " //
+	}
+	return "⇒ "
+}
+
 func fileIcon(cat fileCategory) string {
 	return fileIconExt(cat, "")
 }
@@ -215,6 +224,9 @@ func isHiddenName(name string) bool {
 }
 
 func entryNameStyle(e entry) lipgloss.Style {
+	if e.isSymlink {
+		return lipgloss.NewStyle().Foreground(clrSymlink)
+	}
 	switch {
 	case e.isDir && isHiddenName(e.name):
 		return lipgloss.NewStyle().Foreground(clrDirHidden).Bold(true)

@@ -9,7 +9,7 @@ import (
 
 func TestVisibleWindow(t *testing.T) {
 	tests := []struct {
-		name           string
+		name                    string
 		selected, total, height int
 		wantStart, wantEnd      int
 	}{
@@ -158,7 +158,7 @@ func TestSliceByColumns(t *testing.T) {
 		{"hello", 0, 3, "hel"},
 		{"hello", 3, 5, "lo"},
 		{"hello", 2, 2, ""},
-		{"hello", 5, 3, ""},  // end < start → empty
+		{"hello", 5, 3, ""}, // end < start → empty
 		{"", 0, 3, ""},
 	}
 	for _, tc := range tests {

@@ -13,7 +13,6 @@ func visibleWindow(selected, total, height int) (int, int) {
 	if total <= height {
 		return 0, total
 	}
-	// Keep selected roughly centred
 	half := height / 2
 	start := selected - half
 	if start < 0 {
@@ -28,7 +27,7 @@ func visibleWindow(selected, total, height int) (int, int) {
 }
 
 // trimVisual truncates s to at most n visible terminal columns, appending "…"
-// if truncated. Uses lipgloss.Width for accurate multi-byte / ANSI measurement.
+// if truncated.
 func trimVisual(s string, n int) string {
 	if n <= 0 {
 		return ""
@@ -36,13 +35,12 @@ func trimVisual(s string, n int) string {
 	if lipgloss.Width(s) <= n {
 		return s
 	}
-	// Walk runes, accumulating visual width until we exceed budget
 	runes := []rune(s)
 	var sb strings.Builder
 	used := 0
 	for _, r := range runes {
 		rw := lipgloss.Width(string(r))
-		if used+rw > n-1 { // leave 1 cell for the ellipsis
+		if used+rw > n-1 {
 			sb.WriteRune('…')
 			break
 		}
@@ -69,7 +67,6 @@ func trimToWidth(s string, width int) string {
 	if lipgloss.Width(s) <= width {
 		return s
 	}
-	// Walk runes accumulating visual width, same approach as trimVisual.
 	runes := []rune(s)
 	var out []rune
 	w := 0
@@ -86,21 +83,27 @@ func trimToWidth(s string, width int) string {
 	return string(out) + "…"
 }
 
-// layoutDimensions returns the canonical pane widths and body height derived
-// from the current terminal size. Centralises the layout math used by View,
-// isInPreviewPane, and requestPreview.
+// layoutDimensions returns the canonical pane widths and body height.
+// paneOffset shifts the divider (positive = wider left pane).
 func (m model) layoutDimensions() (leftW, rightW, bodyH int) {
-	leftW = max(26, m.width/3)
+	base := max(26, m.width/3)
+	leftW = max(16, min(m.width/2, base+m.paneOffset))
 	rightW = m.width - leftW - 1
+	if rightW < 20 {
+		rightW = 20
+		leftW = m.width - rightW - 1
+	}
 	bodyH = max(4, m.height-4)
 	return
 }
+
+// ── hit testing ──────────────────────────────────────────────────────────────
 
 func (m model) isInPreviewPane(x, y int) bool {
 	leftW, rightW, bodyH := m.layoutDimensions()
 	previewStartX := leftW + 1
 	previewEndX := previewStartX + rightW - 1
-	previewStartY := 1 // top bar
+	previewStartY := 1
 	previewEndY := previewStartY + bodyH
 
 	return x >= previewStartX && x <= previewEndX && y >= previewStartY && y <= previewEndY
@@ -109,7 +112,6 @@ func (m model) isInPreviewPane(x, y int) bool {
 func (m model) previewBodyRect() (startX, startY, width, height int) {
 	leftW, rightW, bodyH := m.layoutDimensions()
 	startX = leftW + 2
-	// y=0: top bar, y=1: pane top border, y=2: header, y=3: divider, y=4: body start
 	startY = 4
 	width = max(1, rightW-2)
 	height = max(1, bodyH-4)
@@ -131,6 +133,74 @@ func (m model) previewBodyPoint(x, y int) selectionPoint {
 	row = max(0, min(row, height-1))
 	return selectionPoint{x: col, y: row}
 }
+
+// isInFileList returns true when (x,y) falls within the left pane body.
+func (m model) isInFileList(x, y int) bool {
+	leftW, _, bodyH := m.layoutDimensions()
+	// Left pane occupies x: 0..leftW-1, y: 1..1+bodyH.
+	return x >= 0 && x < leftW && y >= 1 && y < 1+bodyH
+}
+
+// fileListClickIndex converts a click position to an entry index.
+// Returns (index, true) on success, (0, false) if the click is outside the
+// entry list area.
+func (m model) fileListClickIndex(x, y int) (int, bool) {
+	_, _, bodyH := m.layoutDimensions()
+	innerH := max(3, bodyH-2)
+	// Within the pane: border(1) + title(1) + divider(1) = 3 fixed rows.
+	// Entry rows start at pane-relative row 3 (absolute y = 1+1+3 = 4? no...)
+	// Absolute y=1: top pane border, y=2: title row, y=3: divider, y=4+: entries.
+	listH := innerH - 2
+	if listH < 1 {
+		listH = 1
+	}
+
+	needTop := false
+	needBot := false
+	start, end := visibleWindow(m.selected, len(m.entries), listH)
+	needTop = start > 0
+	needBot = end < len(m.entries)
+	for {
+		capacity := listH
+		if needTop {
+			capacity--
+		}
+		if needBot {
+			capacity--
+		}
+		if capacity < 1 {
+			capacity = 1
+		}
+		s2, e2 := visibleWindow(m.selected, len(m.entries), capacity)
+		nt2 := s2 > 0
+		nb2 := e2 < len(m.entries)
+		if nt2 == needTop && nb2 == needBot {
+			start, end = s2, e2
+			break
+		}
+		needTop = nt2
+		needBot = nb2
+	}
+
+	// Absolute Y for first entry row.
+	// y=0: top bar, y=1: pane top border, y=2: title, y=3: divider, y=4: first entry.
+	entryStartY := 4
+	if needTop {
+		entryStartY++ // scroll indicator row
+	}
+
+	relY := y - entryStartY
+	if relY < 0 {
+		return 0, false
+	}
+	idx := start + relY
+	if idx >= end || idx >= len(m.entries) {
+		return 0, false
+	}
+	return idx, true
+}
+
+// ── preview text selection helpers ───────────────────────────────────────────
 
 func (m model) selectedPreviewText() string {
 	start := m.previewSelStart
