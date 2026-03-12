@@ -75,7 +75,17 @@ func buildPreview(path string, width, height int) (string, error) {
 
 	switch ext {
 	case ".md", ".markdown", ".mdx":
-		return renderMarkdownPreview(text, width, truncated), nil
+		if rendered := renderMarkdownGlamour(text, width, truncated); rendered != "" {
+			return rendered, nil
+		}
+		// Glamour failed — fall back to syntax-highlighted raw markdown.
+		if hl := highlight(path, text); hl != "" {
+			if truncated {
+				hl += "\n\n... preview truncated ..."
+			}
+			return hl, nil
+		}
+		return text, nil
 	case ".mmd", ".mermaid":
 		return renderMermaidNative(text), nil
 	case ".json":
@@ -161,24 +171,46 @@ func imagePreview(path string, width, height int) (string, bool) {
 
 // ── markdown preview ──────────────────────────────────────────────────────────
 
-func renderMarkdownPreview(markdown string, width int, truncated bool) string {
+// renderMarkdownGlamour renders markdown using glamour and returns the styled
+// output, or an empty string if glamour fails (allowing the caller to fall back).
+//
+// Word-wrap calibration: glamour renders each line at exactly (wordWrap - 2)
+// visible columns, adding 2–3 spaces of left margin.  To fill the preview pane
+// interior (innerW ≈ width) without overflow or wasted space we set:
+//
+//	wordWrap = width + 2  →  glamour output width = width
+//
+// The first line of glamour output is always blank; we strip it.
+func renderMarkdownGlamour(markdown string, width int, truncated bool) string {
 	prepared := replaceMermaidFences(markdown)
-	rendered := prepared
-	r, err := glamour.NewTermRenderer(
-		glamour.WithStandardStyle("tokyo-night"),
-		glamour.WithWordWrap(max(24, width-2)),
-		glamour.WithTableWrap(true),
-		glamour.WithEmoji(),
-	)
-	if err == nil {
-		if out, renderErr := r.Render(prepared); renderErr == nil {
-			rendered = out
+
+	// Try each style in preference order; fall back gracefully.
+	wordWrap := max(24, width+2)
+	for _, style := range []string{"tokyo-night", "dark"} {
+		r, err := glamour.NewTermRenderer(
+			glamour.WithStandardStyle(style),
+			glamour.WithWordWrap(wordWrap),
+			glamour.WithTableWrap(true),
+			glamour.WithEmoji(),
+		)
+		if err != nil {
+			continue
 		}
+		out, err := r.Render(prepared)
+		if err != nil {
+			continue
+		}
+
+		// Strip glamour's leading blank line and trailing whitespace.
+		out = strings.TrimPrefix(out, "\n")
+		out = strings.TrimRight(out, "\n ")
+
+		if truncated {
+			out += "\n\n... preview truncated ..."
+		}
+		return out
 	}
-	if truncated {
-		rendered += "\n\n... preview truncated ..."
-	}
-	return rendered
+	return "" // signal failure to caller
 }
 
 // ── syntax highlighting ───────────────────────────────────────────────────────
