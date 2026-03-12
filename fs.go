@@ -160,6 +160,7 @@ func moveToTrash(path string) error {
 
 // uniqueDstPath returns a non-conflicting destination path inside dir for a
 // file/dir named name.  Appends " (1)", " (2)", … on collision.
+// Caps attempts at 10000 to avoid infinite loops.
 func uniqueDstPath(dir, name string) string {
 	dst := filepath.Join(dir, name)
 	if _, err := os.Stat(dst); os.IsNotExist(err) {
@@ -167,12 +168,14 @@ func uniqueDstPath(dir, name string) string {
 	}
 	ext := filepath.Ext(name)
 	stem := strings.TrimSuffix(name, ext)
-	for i := 1; ; i++ {
+	for i := 1; i <= 10000; i++ {
 		candidate := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, i, ext))
 		if _, err := os.Stat(candidate); os.IsNotExist(err) {
 			return candidate
 		}
 	}
+	// Exhausted — use a timestamp suffix as last resort.
+	return filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, time.Now().UnixNano(), ext))
 }
 
 // copyEntry copies src to dst recursively.
@@ -239,8 +242,11 @@ func pasteEntries(paths []string, dstDir string, op yankMode) (int, error) {
 			// Try a fast rename first; fall back to copy+delete if cross-device.
 			if err := os.Rename(src, dst); err != nil {
 				if err2 := copyEntry(src, dst); err2 != nil {
+					// Copy failed — clean up partial destination.
+					os.RemoveAll(dst)
 					return count, err2
 				}
+				// Copy succeeded — now safe to remove source.
 				if err2 := os.RemoveAll(src); err2 != nil {
 					return count, err2
 				}
@@ -278,6 +284,12 @@ func loadGitStatus(cwd string) tea.Cmd {
 				file = file[idx+4:]
 			}
 			file = strings.Trim(file, "\"")
+			// Only show status for files directly in this directory,
+			// not in subdirectories (which would cause basename collisions).
+			dir := filepath.Dir(file)
+			if dir != "." && dir != "" {
+				continue
+			}
 			base := filepath.Base(file)
 			if xy != "" && base != "" {
 				status[base] = xy

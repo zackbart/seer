@@ -43,6 +43,7 @@ func buildHexPreview(data []byte, info os.FileInfo) string {
 		addr := addrStyle.Render(fmt.Sprintf("%08x", offset))
 
 		// Hex bytes (two groups of 8)
+		rowLen := len(row)
 		var hexParts []string
 		for i, b := range row {
 			if i == 8 {
@@ -50,19 +51,18 @@ func buildHexPreview(data []byte, info os.FileInfo) string {
 			}
 			hexParts = append(hexParts, fmt.Sprintf("%02x", b))
 		}
-		// Pad to 16 bytes
-		for len(row) < 16 {
-			hexParts = append(hexParts, "  ")
-			if len(row) == 8 {
+		// Pad incomplete rows to 16 bytes for alignment.
+		for i := rowLen; i < 16; i++ {
+			if i == 8 {
 				hexParts = append(hexParts, " ")
 			}
-			row = append(row, 0)
+			hexParts = append(hexParts, "  ")
 		}
 		hex := hexStyle.Render(strings.Join(hexParts, " "))
 
 		// ASCII representation
 		var ascii strings.Builder
-		for _, b := range data[offset : offset+min(16, limit-offset)] {
+		for _, b := range data[offset : offset+rowLen] {
 			if b >= 0x20 && b < 0x7f {
 				ascii.WriteByte(b)
 			} else {

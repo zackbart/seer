@@ -106,15 +106,30 @@ func (m model) applySearch(entries []entry) []entry {
 // fuzzyMatch returns true when all runes of query appear in name in order
 // (case-insensitive).  This is the same algorithm used by fzf / telescope.
 func fuzzyMatch(name, query string) bool {
-	name = strings.ToLower(name)
-	query = strings.ToLower(query)
+	nameRunes := []rune(strings.ToLower(name))
+	queryRunes := []rune(strings.ToLower(query))
 	qi := 0
-	for i := 0; i < len(name) && qi < len(query); i++ {
-		if name[i] == query[qi] {
+	for i := 0; i < len(nameRunes) && qi < len(queryRunes); i++ {
+		if nameRunes[i] == queryRunes[qi] {
 			qi++
 		}
 	}
-	return qi == len(query)
+	return qi == len(queryRunes)
+}
+
+// ── pane offset ───────────────────────────────────────────────────────────
+
+// clampPaneOffset ensures the pane divider offset stays within valid bounds
+// after a terminal resize.
+func (m *model) clampPaneOffset() {
+	minOffset := -(m.width/3 - 16)
+	maxOffset := m.width / 4
+	if m.paneOffset < minOffset {
+		m.paneOffset = minOffset
+	}
+	if m.paneOffset > maxOffset {
+		m.paneOffset = maxOffset
+	}
 }
 
 // ── preview cache ─────────────────────────────────────────────────────────────

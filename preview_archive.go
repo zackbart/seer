@@ -115,19 +115,29 @@ func archiveListings(path, ext string) ([]string, error) {
 	}
 
 	raw := strings.Split(strings.TrimSpace(string(out)), "\n")
-	// For 7z's "-slt" output, extract just the Path fields.
-	if len(raw) > 0 && (ext == ".zip" || ext == ".jar" || ext == ".war" || ext == ".7z" || ext == ".rar") {
-		if _, err := exec.LookPath("unzip"); err != nil && ext != ".tar" {
-			var paths []string
-			for _, line := range raw {
-				if strings.HasPrefix(line, "Path = ") {
-					p := strings.TrimPrefix(line, "Path = ")
-					paths = append(paths, p)
-				}
+
+	// Detect 7z "-slt" output format and extract just the Path fields.
+	// This applies when 7z was used as a fallback (unzip unavailable for
+	// zip/jar/war) or as the primary tool for .7z/.rar files.
+	used7z := false
+	switch ext {
+	case ".7z", ".rar":
+		used7z = true
+	case ".zip", ".jar", ".war":
+		if _, err := exec.LookPath("unzip"); err != nil {
+			used7z = true
+		}
+	}
+	if used7z && len(raw) > 0 {
+		var paths []string
+		for _, line := range raw {
+			if strings.HasPrefix(line, "Path = ") {
+				p := strings.TrimPrefix(line, "Path = ")
+				paths = append(paths, p)
 			}
-			if len(paths) > 0 {
-				return paths, nil
-			}
+		}
+		if len(paths) > 0 {
+			return paths, nil
 		}
 	}
 

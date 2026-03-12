@@ -1,6 +1,41 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+)
+
+// ── fuzzyMatch ────────────────────────────────────────────────────────────────
+
+func TestFuzzyMatch(t *testing.T) {
+	tests := []struct {
+		name, query string
+		want        bool
+	}{
+		{"main.go", "mg", true},
+		{"main.go", "main", true},
+		{"main.go", "mango", true}, // m-a-n from "main", g-o from ".go"
+		{"README.md", "rm", true},
+		{"README.md", "rmd", true},
+		{"README.md", "xyz", false},
+		{"", "a", false},
+		{"abc", "", true},
+		// Multi-byte UTF-8: accented characters.
+		{"café.txt", "caf", true},
+		{"café.txt", "café", true},
+		{"café.txt", "ct", true},
+		{"日本語.go", "日語", true},
+		{"日本語.go", "語本", false}, // wrong order
+	}
+	for _, tc := range tests {
+		got := fuzzyMatch(tc.name, tc.query)
+		if got != tc.want {
+			t.Errorf("fuzzyMatch(%q, %q) = %v, want %v", tc.name, tc.query, got, tc.want)
+		}
+	}
+}
 
 // ── applySearch ───────────────────────────────────────────────────────────────
 
@@ -56,6 +91,95 @@ func TestApplySearchEmptyList(t *testing.T) {
 	got := m.applySearch(nil)
 	if got != nil && len(got) != 0 {
 		t.Errorf("search on nil list should return nil/empty, got %v", got)
+	}
+}
+
+// ── applySort ─────────────────────────────────────────────────────────────────
+
+func TestApplySort(t *testing.T) {
+	now := time.Now()
+	entries := []entry{
+		{name: "beta", isDir: false, size: 200, modTime: now.Add(-2 * time.Hour)},
+		{name: "alpha", isDir: false, size: 100, modTime: now.Add(-1 * time.Hour)},
+		{name: "gamma", isDir: true, size: 0, modTime: now},
+		{name: "delta", isDir: true, size: 0, modTime: now.Add(-3 * time.Hour)},
+	}
+
+	// Name ascending — returns entries unchanged (listDir already sorted).
+	sorted := applySort(entries, sortNameAsc)
+	if len(sorted) != 4 || sorted[0].name != "beta" {
+		t.Errorf("sortNameAsc: expected original order, got %q first", sorted[0].name)
+	}
+
+	// Name descending — dirs first (reverse alpha), then files (reverse alpha).
+	sorted = applySort(entries, sortNameDesc)
+	if !sorted[0].isDir || !sorted[1].isDir {
+		t.Errorf("sortNameDesc: dirs should be first")
+	}
+
+	// Size descending — largest file first among files.
+	sorted = applySort(entries, sortSizeDesc)
+	for _, e := range sorted {
+		if !e.isDir {
+			if e.name != "beta" {
+				t.Errorf("sortSizeDesc: expected 'beta' (200) first among files, got %q", e.name)
+			}
+			break
+		}
+	}
+
+	// Size ascending — smallest file first among files.
+	sorted = applySort(entries, sortSizeAsc)
+	for _, e := range sorted {
+		if !e.isDir {
+			if e.name != "alpha" {
+				t.Errorf("sortSizeAsc: expected 'alpha' (100) first among files, got %q", e.name)
+			}
+			break
+		}
+	}
+
+	// Modified descending — most recent dir first.
+	sorted = applySort(entries, sortModifiedDesc)
+	if sorted[0].name != "gamma" {
+		t.Errorf("sortModifiedDesc: expected 'gamma' first, got %q", sorted[0].name)
+	}
+}
+
+// ── uniqueDstPath ─────────────────────────────────────────────────────────────
+
+func TestUniqueDstPath(t *testing.T) {
+	dir := t.TempDir()
+
+	// No collision — returns bare path.
+	got := uniqueDstPath(dir, "newfile.txt")
+	want := filepath.Join(dir, "newfile.txt")
+	if got != want {
+		t.Errorf("no collision: got %q, want %q", got, want)
+	}
+
+	// Create the file, should return " (1)".
+	os.WriteFile(filepath.Join(dir, "newfile.txt"), []byte("x"), 0644)
+	got = uniqueDstPath(dir, "newfile.txt")
+	want = filepath.Join(dir, "newfile (1).txt")
+	if got != want {
+		t.Errorf("first collision: got %q, want %q", got, want)
+	}
+
+	// Create (1) too, should return " (2)".
+	os.WriteFile(filepath.Join(dir, "newfile (1).txt"), []byte("x"), 0644)
+	got = uniqueDstPath(dir, "newfile.txt")
+	want = filepath.Join(dir, "newfile (2).txt")
+	if got != want {
+		t.Errorf("second collision: got %q, want %q", got, want)
+	}
+
+	// No-extension file.
+	os.WriteFile(filepath.Join(dir, "Makefile"), []byte("x"), 0644)
+	got = uniqueDstPath(dir, "Makefile")
+	want = filepath.Join(dir, "Makefile (1)")
+	if got != want {
+		t.Errorf("no ext: got %q, want %q", got, want)
 	}
 }
 
