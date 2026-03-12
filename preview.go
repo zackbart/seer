@@ -184,15 +184,28 @@ func imagePreview(path string, width, height int) (string, bool) {
 func renderMarkdownGlamour(markdown string, width int, truncated bool) string {
 	prepared := replaceMermaidFences(markdown)
 
-	// Try each style in preference order; fall back gracefully.
+	// wordWrap is calibrated so glamour's output is exactly `width` columns:
+	// glamour renders at (wordWrap − 2*margin) = (wordWrap − 2) when margin=1.
 	wordWrap := max(24, width+2)
-	for _, style := range []string{"tokyo-night", "dark"} {
-		r, err := glamour.NewTermRenderer(
-			glamour.WithStandardStyle(style),
+
+	// Try our custom seer style first, then fall back to built-in dark.
+	opts := [][]glamour.TermRendererOption{
+		{
+			glamour.WithStylesFromJSONBytes([]byte(seerMarkdownStyle)),
 			glamour.WithWordWrap(wordWrap),
 			glamour.WithTableWrap(true),
 			glamour.WithEmoji(),
-		)
+		},
+		{
+			glamour.WithStandardStyle("dark"),
+			glamour.WithWordWrap(wordWrap),
+			glamour.WithTableWrap(true),
+			glamour.WithEmoji(),
+		},
+	}
+
+	for _, o := range opts {
+		r, err := glamour.NewTermRenderer(o...)
 		if err != nil {
 			continue
 		}
@@ -201,9 +214,13 @@ func renderMarkdownGlamour(markdown string, width int, truncated bool) string {
 			continue
 		}
 
-		// Strip glamour's leading blank line and trailing whitespace.
+		// Strip glamour's mandatory leading blank line and trailing whitespace.
 		out = strings.TrimPrefix(out, "\n")
 		out = strings.TrimRight(out, "\n ")
+
+		if out == "" {
+			continue
+		}
 
 		if truncated {
 			out += "\n\n... preview truncated ..."
