@@ -1,0 +1,48 @@
+import fsp from "fs/promises";
+import path from "path";
+import chalk from "chalk";
+import { Entry, FileCategory, MAX_DIR_PREVIEW } from "../types.js";
+import { categorise, fileIconExt, entryColor, colors } from "../theme.js";
+
+export async function buildDirPreview(dirPath: string): Promise<string> {
+  const items = await fsp.readdir(dirPath, { withFileTypes: true });
+
+  const lines: string[] = [];
+  const dirIcon = fileIconExt(FileCategory.Dir, "");
+  lines.push(chalk.ansi256(Number(colors.dir)).bold(`${dirIcon}${path.basename(dirPath)}/`));
+  lines.push(chalk.ansi256(Number(colors.muted))(`  ${items.length} items`));
+  lines.push(chalk.ansi256(Number(colors.dim))(`  ${"─".repeat(30)}`));
+  lines.push("");
+
+  const limit = Math.min(items.length, MAX_DIR_PREVIEW);
+  for (let i = 0; i < limit; i++) {
+    const item = items[i];
+    const name = item.name;
+    const isDir = item.isDirectory();
+    const fakeEntry: Entry = {
+      name,
+      path: path.join(dirPath, name),
+      isDir,
+      size: 0,
+      modTime: new Date(),
+      isSymlink: false,
+      symlinkTarget: "",
+    };
+    const cat = categorise(fakeEntry);
+    const color = Number(entryColor(fakeEntry));
+    const icon = fileIconExt(cat, path.extname(name));
+
+    if (isDir) {
+      lines.push(chalk.ansi256(color).bold(`  ${icon}${name}/`));
+    } else {
+      lines.push(chalk.ansi256(color)(`  ${icon}${name}`));
+    }
+  }
+
+  if (items.length > limit) {
+    lines.push("");
+    lines.push(chalk.ansi256(Number(colors.muted))(`  … and ${items.length - limit} more`));
+  }
+
+  return lines.join("\n");
+}
