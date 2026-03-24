@@ -166,6 +166,7 @@ export function FileList({ state, width, height }: Props) {
       height={height}
       borderStyle="round"
       borderColor={state.focusedPane === "files" ? colors.borderStrong : colors.border}
+      overflowY="hidden"
     >
       {rows}
     </Box>

@@ -81,12 +81,12 @@ export function Preview({ state, width, height }: Props) {
   const contentH = offset > 0 ? bodyH - 1 : bodyH;
   const visibleLines = allLines.slice(offset, offset + contentH);
 
-  // Render preview as a single Text block to keep ANSI codes intact
-  // (shiki/chroma produce raw ANSI which Ink's Text renders correctly)
+  // Render preview as a single Text block to keep ANSI codes intact.
+  // wrap="truncate" prevents long lines from wrapping and overflowing the pane.
   const bodyText = visibleLines.join("\n");
   rows.push(
-    <Box key={`slot-${slot++}`} height={contentH}>
-      <Text>{bodyText || " "}</Text>
+    <Box key={`slot-${slot++}`} height={contentH} width={width - 2} overflowY="hidden">
+      <Text wrap="truncate">{bodyText || " "}</Text>
     </Box>,
   );
 
