@@ -96,7 +96,7 @@ export function Preview({ state, width, height }: Props) {
       width={width}
       height={height}
       borderStyle="round"
-      borderColor={colors.borderStrong}
+      borderColor={state.focusedPane === "preview" ? colors.borderStrong : colors.border}
     >
       {rows}
     </Box>

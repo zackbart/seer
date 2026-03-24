@@ -58,6 +58,8 @@ export function BottomBar({ state, width }: Props) {
       { key: "j/k", desc: "nav" },
       { key: "↵", desc: "open" },
       { key: "h", desc: "back" },
+      { key: "tab", desc: "pane" },
+      { key: "^d/u", desc: "scroll" },
       { key: "/", desc: "find" },
       { key: "r", desc: "rename" },
       { key: "n", desc: "new" },

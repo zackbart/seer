@@ -80,6 +80,8 @@ export interface AppState {
   loading: boolean;
   requestId: number;
 
+  focusedPane: "files" | "preview";
+
   searching: boolean;
   searchQuery: string;
 

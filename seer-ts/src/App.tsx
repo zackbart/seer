@@ -87,6 +87,7 @@ function createInitialState(cwd: string): AppState {
     previewOffset: 0,
     loading: false,
     requestId: 0,
+    focusedPane: "files",
     searching: false,
     searchQuery: "",
     confirmingDelete: false,
@@ -399,20 +400,39 @@ export function App({ startDir, cwdFile }: AppProps) {
         }
         return;
 
-      // Preview scroll
+      // Tab — switch focused pane
+      case "tab": {
+        const next = s.focusedPane === "files" ? "preview" : "files";
+        dispatch({ type: "SET_STATE", payload: { focusedPane: next } });
+        return;
+      }
+
+      // Scroll — acts on whichever pane is focused
       case "ctrl+d":
       case "pagedown": {
-        const newOffset = Math.min(
-          s.previewOffset + previewPageSize(s.height),
-          Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8)),
-        );
-        dispatch({ type: "SET_STATE", payload: { previewOffset: newOffset } });
+        const pageSize = previewPageSize(s.height);
+        if (s.focusedPane === "preview") {
+          const maxOff = Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8));
+          const newOffset = Math.min(s.previewOffset + pageSize, maxOff);
+          dispatch({ type: "SET_STATE", payload: { previewOffset: newOffset } });
+        } else {
+          // Scroll file list down by a page
+          const newSel = Math.min(s.selected + pageSize, s.entries.length - 1);
+          if (newSel !== s.selected) navigate(newSel);
+        }
         return;
       }
       case "ctrl+u":
       case "pageup": {
-        const newOffset = Math.max(0, s.previewOffset - previewPageSize(s.height));
-        dispatch({ type: "SET_STATE", payload: { previewOffset: newOffset } });
+        const pageSize = previewPageSize(s.height);
+        if (s.focusedPane === "preview") {
+          const newOffset = Math.max(0, s.previewOffset - pageSize);
+          dispatch({ type: "SET_STATE", payload: { previewOffset: newOffset } });
+        } else {
+          // Scroll file list up by a page
+          const newSel = Math.max(0, s.selected - pageSize);
+          if (newSel !== s.selected) navigate(newSel);
+        }
         return;
       }
 
