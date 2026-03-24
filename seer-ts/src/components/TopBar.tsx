@@ -1,6 +1,6 @@
-import React from "react";
 import { Box, Text } from "ink";
 import path from "path";
+import chalk from "chalk";
 import { AppState, SortMode, YankMode, sortModeLabel } from "../types.js";
 import { colors } from "../theme.js";
 
@@ -20,30 +20,26 @@ export function TopBar({ state, width }: Props) {
     count += `  [${op}: ${state.yankPaths.length}]`;
   }
 
-  // Style individual breadcrumb segments with dimmed separators
+  // Breadcrumb with styled separators
   const pathParts = state.cwd.split(path.sep).filter(Boolean);
-  const breadcrumbElements: React.ReactNode[] = [];
+  const sepStyle = chalk.ansi256(Number(colors.pathSep));
+  const segStyle = chalk.ansi256(Number(colors.breadcrumb));
+  let breadcrumb: string;
   if (pathParts.length > 0) {
-    breadcrumbElements.push(<Text key="root" color={colors.pathSep}>/ </Text>);
-    pathParts.forEach((p, i) => {
-      if (i > 0) {
-        breadcrumbElements.push(<Text key={`sep-${i}`} color={colors.pathSep}> › </Text>);
-      }
-      breadcrumbElements.push(<Text key={`seg-${i}`} color={colors.breadcrumb}>{p}</Text>);
-    });
+    breadcrumb = sepStyle("/ ") + pathParts.map((p) => segStyle(p)).join(sepStyle(" › "));
   } else {
-    breadcrumbElements.push(<Text key="root" color={colors.breadcrumb}>/</Text>);
+    breadcrumb = segStyle("/");
   }
+
+  const countStyled = chalk.ansi256(Number(colors.muted))(count);
 
   return (
     <Box width={width} height={1}>
-      <Text backgroundColor={colors.surface}> </Text>
+      <Text backgroundColor={colors.surface}> {breadcrumb}</Text>
       <Box flexGrow={1}>
-        <Text backgroundColor={colors.surface}>{breadcrumbElements}</Text>
+        <Text backgroundColor={colors.surface}> </Text>
       </Box>
-      <Box>
-        <Text color={colors.muted} backgroundColor={colors.surface}> {count} </Text>
-      </Box>
+      <Text backgroundColor={colors.surface}>{countStyled} </Text>
     </Box>
   );
 }

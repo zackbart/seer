@@ -59,9 +59,19 @@ export function Preview({ state, width, height }: Props) {
     displayLines = previewLines.slice(0, previewH);
   }
 
+  // Pad to fixed height to prevent layout shifts
+  while (displayLines.length < previewH) {
+    displayLines.push("");
+  }
+
   const headerColor = state.entries.length > 0 && state.selected < state.entries.length
     ? entryColor(state.entries[state.selected])
     : colors.muted;
+
+  // Combine all preview lines into a single string to avoid
+  // rendering N separate Box/Text elements which causes layout thrashing
+  const bodyText = (scrollIndicator ? scrollIndicator + "\n" : "") +
+    displayLines.join("\n");
 
   return (
     <Box
@@ -81,24 +91,13 @@ export function Preview({ state, width, height }: Props) {
       </Box>
 
       {/* Divider */}
-      <Box width={width}>
-        <Text color={colors.dim}>{"─".repeat(Math.max(1, width))}</Text>
+      <Box>
+        <Text color={colors.dim}>{"─".repeat(Math.max(1, width - 2))}</Text>
       </Box>
 
-      {/* Scroll indicator */}
-      {scrollIndicator && (
-        <Box width={width}>
-          <Text color={colors.scrollbar}>{scrollIndicator}</Text>
-        </Box>
-      )}
-
-      {/* Preview content — render as raw ANSI text */}
-      <Box flexDirection="column" width={width} flexGrow={1}>
-        {displayLines.map((line, i) => (
-          <Box key={i} width={width}>
-            <Text>{line || " "}</Text>
-          </Box>
-        ))}
+      {/* Preview content — single Text block with ANSI content */}
+      <Box flexGrow={1}>
+        <Text>{bodyText}</Text>
       </Box>
     </Box>
   );

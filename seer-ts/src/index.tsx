@@ -83,6 +83,8 @@ const { waitUntilExit } = render(
   <App startDir={resolvedDir} cwdFile={cwdFile} />,
   {
     exitOnCtrlC: false,
+    // Full-screen mode uses alt-screen and redraws entirely each frame,
+    // preventing the incremental-patch flicker that causes layout jumps.
   },
 );
 

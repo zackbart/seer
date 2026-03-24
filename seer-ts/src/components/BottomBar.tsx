@@ -1,5 +1,5 @@
-import React from "react";
 import { Box, Text } from "ink";
+import chalk from "chalk";
 import { AppState, InputMode } from "../types.js";
 import { colors } from "../theme.js";
 
@@ -14,24 +14,23 @@ interface Hint {
 }
 
 export function BottomBar({ state, width }: Props) {
-  // Status line
-  let statusContent: React.ReactNode;
+  // Status line — build as styled string
+  let statusText: string;
 
   if (state.searching) {
-    statusContent = (
-      <Box>
-        <Text color={colors.accent} bold>/ </Text>
-        <Text color="white">{state.searchQuery}</Text>
-        <Text color={colors.accent}>▌</Text>
-        <Text color={colors.dim}>  fuzzy</Text>
-      </Box>
-    );
+    const accent = chalk.ansi256(Number(colors.accent)).bold;
+    const query = chalk.white(state.searchQuery);
+    const cursor = chalk.ansi256(Number(colors.accent))("▌");
+    const mode = chalk.ansi256(Number(colors.dim))("  fuzzy");
+    statusText = `${accent("/ ")}${query}${cursor}${mode}`;
   } else if (state.inputMode !== InputMode.None) {
-    statusContent = <Text color={colors.accent} bold>{state.inputMode === InputMode.Rename ? "Rename" : state.inputMode === InputMode.NewFile ? "New File" : "New Directory"}</Text>;
+    const title = state.inputMode === InputMode.Rename ? "Rename"
+      : state.inputMode === InputMode.NewFile ? "New File" : "New Directory";
+    statusText = chalk.ansi256(Number(colors.accent)).bold(title);
   } else {
     const icon = state.status === "ready" ? "◆" : "●";
-    const iconColor = state.status === "ready" ? colors.exec : colors.status;
-    statusContent = <Text color={iconColor}>{icon} {state.status}</Text>;
+    const iconColor = state.status === "ready" ? Number(colors.exec) : Number(colors.status);
+    statusText = chalk.ansi256(iconColor)(`${icon} ${state.status}`);
   }
 
   // Key hints
@@ -54,43 +53,51 @@ export function BottomBar({ state, width }: Props) {
       { key: "enter/l", desc: "open" },
       { key: "h", desc: "up" },
       { key: "r", desc: "rename" },
-      { key: "n/N", desc: "new file/dir" },
+      { key: "n/N", desc: "new" },
       { key: "e", desc: "edit" },
       { key: "y/x", desc: "yank/cut" },
       { key: "P", desc: "paste" },
-      { key: "space", desc: "select" },
+      { key: "space", desc: "sel" },
       { key: "s", desc: "sort" },
-      { key: "b", desc: "bookmark" },
-      { key: "1-9", desc: "jump" },
-      { key: "backspace", desc: "trash" },
-      { key: "p", desc: "copy path" },
+      { key: "b", desc: "bkm" },
       { key: "/", desc: "search" },
       { key: ".", desc: "hidden" },
-      { key: "</>", desc: "pane" },
-      { key: "R", desc: "reload" },
-      { key: "^d/u", desc: "scroll" },
       { key: "q", desc: "quit" },
     ];
   }
 
+  const keyStyle = chalk.ansi256(Number(colors.hintKey)).bold;
+  const descStyle = chalk.ansi256(Number(colors.hintText));
+  const sepStyle = chalk.ansi256(Number(colors.dim));
+
+  // Build hint string, budget-checked against width
+  const parts: string[] = [];
+  let used = 2; // padding
+  for (let i = 0; i < hints.length; i++) {
+    const h = hints[i];
+    const seg = `${keyStyle(h.key)}${descStyle(` ${h.desc}`)}`;
+    const segLen = h.key.length + 1 + h.desc.length;
+    const sepLen = i > 0 ? 3 : 0; // " · "
+    if (used + sepLen + segLen > width) break;
+    if (i > 0) {
+      parts.push(sepStyle(" · "));
+      used += 3;
+    }
+    parts.push(seg);
+    used += segLen;
+  }
+  const hintsText = parts.join("");
+
   return (
-    <Box flexDirection="column" width={width}>
+    <Box flexDirection="column" width={width} height={2}>
       <Box width={width} height={1}>
-        <Text backgroundColor={colors.surface}> </Text>
+        <Text backgroundColor={colors.surface}> {statusText}</Text>
         <Box flexGrow={1}>
-          <Text backgroundColor={colors.surface}>{statusContent}</Text>
+          <Text backgroundColor={colors.surface}> </Text>
         </Box>
-        <Text backgroundColor={colors.surface}> </Text>
       </Box>
       <Box width={width} height={1}>
-        <Text backgroundColor={colors.surface}> </Text>
-        {hints.map((h, i) => (
-          <React.Fragment key={h.key}>
-            {i > 0 && <Text color={colors.dim} backgroundColor={colors.surface}> · </Text>}
-            <Text color={colors.hintKey} bold backgroundColor={colors.surface}>{h.key}</Text>
-            <Text color={colors.hintText} backgroundColor={colors.surface}> {h.desc}</Text>
-          </React.Fragment>
-        ))}
+        <Text backgroundColor={colors.surface}> {hintsText}</Text>
         <Box flexGrow={1}>
           <Text backgroundColor={colors.surface}> </Text>
         </Box>
