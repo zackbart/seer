@@ -9,24 +9,161 @@ permissions:
   contents: write
 
 jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: bun-darwin-arm64
+            artifact: seer_darwin_arm64
+          - os: macos-13
+            target: bun-darwin-x64
+            artifact: seer_darwin_amd64
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            artifact: seer_linux_amd64
+          - os: ubuntu-latest
+            target: bun-linux-arm64
+            artifact: seer_linux_arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Build binary
+        run: bun build --compile --target=${{ matrix.target }} src/index.tsx --outfile seer
+
+      - name: Package tarball
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          tar -czf ${{ matrix.artifact }}.tar.gz seer
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
   release:
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          go-version: "1.25"
+          path: dist
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "~> v2"
-          args: release --clean
+      - name: Create release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+
+          # Collect tarballs from artifact subdirectories
+          mkdir -p release
+          for dir in dist/*/; do
+            cp "$dir"*.tar.gz release/
+          done
+
+          # Generate checksums
+          cd release
+          sha256sum *.tar.gz > checksums.txt
+          cd ..
+
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --title "seer v${VERSION}" \
+            --generate-notes
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Update Homebrew formula
+        env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+
+          # Compute sha256 for each tarball
+          SHA_DARWIN_ARM64=$(sha256sum dist/seer_darwin_arm64/seer_darwin_arm64.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_AMD64=$(sha256sum dist/seer_darwin_amd64/seer_darwin_amd64.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_AMD64=$(sha256sum dist/seer_linux_amd64/seer_linux_amd64.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_ARM64=$(sha256sum dist/seer_linux_arm64/seer_linux_arm64.tar.gz | cut -d' ' -f1)
+
+          BASE_URL="https://github.com/zackbart/seer/releases/download/v${VERSION}"
+
+          # Generate formula
+          cat > seer.rb << FORMULA
+          # typed: false
+          # frozen_string_literal: true
+
+          class Seer < Formula
+            desc "A TUI file browser with live preview"
+            homepage "https://github.com/zackbart/seer"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "${BASE_URL}/seer_darwin_arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              if Hardware::CPU.intel?
+                url "${BASE_URL}/seer_darwin_amd64.tar.gz"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
+                url "${BASE_URL}/seer_linux_amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+              if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
+                url "${BASE_URL}/seer_linux_arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+            end
+
+            def install
+              bin.install "seer"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/seer --version")
+            end
+          end
+          FORMULA
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' seer.rb
+
+          # Push to homebrew-tap repo
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/zackbart/homebrew-tap.git" tap
+          cp seer.rb tap/Formula/seer.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/seer.rb
+          git commit -m "seer ${VERSION}"
+          git push

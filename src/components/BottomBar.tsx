@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { AppState, InputMode } from "../types.js";
+import { AppState } from "../types.js";
 import { colors } from "../theme.js";
 
 interface Props {
@@ -26,10 +26,6 @@ export function BottomBar({ state, width }: Props) {
         <Text color={colors.dim}>  fuzzy</Text>
       </>
     );
-  } else if (state.inputMode !== InputMode.None) {
-    const title = state.inputMode === InputMode.Rename ? "Rename"
-      : state.inputMode === InputMode.NewFile ? "New File" : "New Directory";
-    statusContent = <Text color={colors.accent} bold>{title}</Text>;
   } else {
     const isReady = state.status === "ready";
     statusContent = (
@@ -48,27 +44,17 @@ export function BottomBar({ state, width }: Props) {
       { key: "⌫", desc: "delete" },
       { key: "↵", desc: "open" },
     ];
-  } else if (state.inputMode !== InputMode.None) {
-    hints = [
-      { key: "↵", desc: "confirm" },
-      { key: "esc", desc: "cancel" },
-    ];
   } else {
     hints = [
       { key: "j/k", desc: "nav" },
       { key: "↵", desc: "open" },
       { key: "h", desc: "back" },
-      { key: "tab", desc: "pane" },
-      { key: "^d/u", desc: "scroll" },
       { key: "/", desc: "find" },
-      { key: "r", desc: "rename" },
-      { key: "n", desc: "new" },
-      { key: "e", desc: "edit" },
-      { key: "y/x", desc: "yank" },
-      { key: "P", desc: "paste" },
-      { key: "⌫", desc: "trash" },
       { key: "s", desc: "sort" },
       { key: ".", desc: "hidden" },
+      { key: "p", desc: "path" },
+      { key: "t", desc: "theme" },
+      { key: "⌫", desc: "trash" },
       { key: "q", desc: "quit" },
     ];
   }

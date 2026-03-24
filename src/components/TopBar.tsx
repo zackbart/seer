@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import path from "path";
-import { AppState, SortMode, YankMode, sortModeLabel } from "../types.js";
+import { AppState, SortMode, sortModeLabel } from "../types.js";
 import { colors } from "../theme.js";
 
 interface Props {
@@ -25,14 +25,6 @@ export function TopBar({ state, width }: Props) {
   if (state.sortBy !== SortMode.NameAsc) {
     badges.push(<Text key="sort" color={colors.accent} dimColor> · {sortModeLabel[state.sortBy]}</Text>);
   }
-  if (state.multiSelected.size > 0) {
-    badges.push(<Text key="sel" color={colors.success} bold> · {state.multiSelected.size} sel</Text>);
-  }
-  if (state.yankPaths.length > 0 && state.yankOp !== YankMode.None) {
-    const op = state.yankOp === YankMode.Cut ? "cut" : "yank";
-    badges.push(<Text key="yank" color={colors.media}> · {op}:{state.yankPaths.length}</Text>);
-  }
-
   return (
     <Box width={width} height={1}>
       <Text backgroundColor={colors.surface}> </Text>

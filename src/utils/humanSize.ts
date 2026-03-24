@@ -10,7 +10,3 @@ export function humanSize(n: number): string {
   if (idx === 0) return `${n} ${units[idx]}`;
   return `${v.toFixed(1)} ${units[idx]}`;
 }
-
-export function previewPageSize(h: number): number {
-  return Math.max(3, Math.floor(h / 3));
-}

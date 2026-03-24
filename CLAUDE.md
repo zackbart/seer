@@ -2,84 +2,96 @@
 
 ## Project Overview
 
-Seer is a Go TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi.
+Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.0.
 
 ## Tech Stack
 
-- **Go 1.25.0** — `package main`, no sub-packages
-- **charmbracelet/bubbletea** — TUI framework (Elm Architecture: Model/Update/View)
-- **charmbracelet/lipgloss** — terminal styling
-- **charmbracelet/glamour** — Markdown rendering (tokyo-night style)
-- **alecthomas/chroma** — syntax highlighting (nord theme)
-- **golang.org/x/image** — BMP, TIFF, WebP image support
+- **Bun** — runtime and bundler
+- **React 18 + Ink 5** — TUI framework (React components rendered to terminal)
+- **Shiki** — syntax highlighting (nord theme)
+- **Chalk** — terminal color support
+- **Marked + marked-terminal** — Markdown rendering
 
 ## Build & Run
 
 ```bash
-go build -o seer .     # Build
-go run .               # Run directly
-go mod tidy            # Fetch/clean dependencies
+bun run start             # Run directly
+bun run build             # Compile to standalone binary
+bun run typecheck         # Type-check (tsc --noEmit)
 ```
-
-## Testing & Quality
-
-```bash
-go test ./...          # Run tests (none exist yet)
-go fmt ./...           # Format code
-go vet ./...           # Static analysis
-```
-
-No linter config, no CI pipeline, no Makefile.
 
 ## Architecture
 
-The codebase is split across focused files, all in `package main`, following the Bubble Tea Elm Architecture:
+All source code lives in `src/`, organized as:
 
-| File | Contents |
+| File/Dir | Contents |
 |---|---|
-| `main.go` | Entry point, `--version`/`--help` flags |
-| `types.go` | Constants, `entry`, `model` struct, message types |
-| `theme.go` | Color palette, icons, file categorisation, styling helpers |
-| `model.go` | `initialModel()`, `Init()`, `Update()` — core Elm loop |
-| `view.go` | `View()` and all `render*` methods |
-| `layout.go` | Layout math, text truncation helpers, preview selection |
-| `model_ops.go` | Model mutations: navigation, cache, search, preview request |
-| `clipboard.go` | OS clipboard integration |
-| `fs.go` | `listDir()`, `moveToTrash()`, file utilities |
-| `util.go` | `humanSize()`, `min()`, `max()`, `previewPageSize()` |
-| `preview.go` | `buildPreview()` dispatch, dir/image/markdown/code/highlight |
-| `preview_image.go` | Truecolor and ASCII image rendering |
-| `preview_json.go` | Colorised JSON pretty-printer |
-| `preview_mermaid.go` | Mermaid flowchart + sequence diagram ASCII renderers |
+| `src/index.tsx` | Entry point, CLI flags, alt-screen setup |
+| `src/App.tsx` | Main component, useReducer state, key/mouse handlers, layout |
+| `src/types.ts` | Enums, `Entry`, `AppState` interface, constants |
+| `src/theme.ts` | 7 color themes, persistence, icons, file categorization |
+| `src/components/TopBar.tsx` | Breadcrumb path + badges |
+| `src/components/FileList.tsx` | Directory listing with git badges |
+| `src/components/Preview.tsx` | File preview with selection highlighting |
+| `src/components/BottomBar.tsx` | Status line + key hints |
+| `src/components/DeleteDialog.tsx` | Trash confirmation dialog |
+| `src/previews/index.ts` | Preview dispatcher |
+| `src/previews/code.ts` | Shiki syntax highlighting |
+| `src/previews/markdown.ts` | Markdown rendering |
+| `src/previews/json.ts` | Colorized JSON |
+| `src/previews/csv.ts` | Table-formatted CSV/TSV |
+| `src/previews/directory.ts` | Directory listing preview |
+| `src/previews/hex.ts` | Hex dump for binary files |
+| `src/previews/archive.ts` | Archive contents |
+| `src/previews/mermaid.ts` | ASCII mermaid diagrams |
+| `src/hooks/useMouse.ts` | Mouse event parsing (SGR protocol) |
+| `src/hooks/useKeyBindings.ts` | Keyboard input handler |
+| `src/hooks/usePreviewCache.ts` | LRU preview cache |
+| `src/utils/fs.ts` | Directory listing, sorting, trash, git status |
+| `src/utils/clipboard.ts` | OS clipboard integration |
+| `src/utils/humanSize.ts` | File size formatting |
 
 ### Key Patterns
 
-- **Async previews**: Preview generation runs via `tea.Cmd`; a `requestID` field prevents stale results from overwriting fresh ones
+- **useReducer**: All state in `AppState`, mutations via dispatch
+- **Async previews**: Preview generation is async; `requestId` prevents stale results
 - **LRU cache**: 50-entry preview cache keyed by `path|modTime|size|width|height`
-- **Layout math**: `layoutDimensions()` is the single source of truth — left pane is `max(26, width/3)`, right pane fills the rest minus a 1-char separator
-- **File categorization**: `categorise()` maps extensions to categories (`catDir`, `catImage`, `catCode`, etc.) which drive icons and colors
-- **Method receivers**: View/render methods use value receivers; mutating methods use pointer receivers
+- **Layout math**: `layoutDimensions()` is the single source of truth
+- **Position-aware mouse**: Scroll targets the pane under the cursor; click-drag in preview copies text
+- **Themes**: 7 built-in themes (5 dark, 2 light), persisted to `~/.config/seer/theme`
 
-### Preview Pipeline
+### Keybindings
 
-`buildPreview()` dispatches by file type to: directory listing, image (truecolor half-blocks or ASCII), Markdown (glamour), JSON (custom colorizer), Mermaid (native ASCII), syntax-highlighted code, or plain text fallback.
+- `j/k` — navigate files
+- `g/G` — top/bottom
+- `l/enter` — open directory
+- `h` — parent directory
+- `/` — fuzzy search
+- `.` — toggle hidden files
+- `s` — cycle sort mode
+- `t` — cycle theme
+- `p` — copy path to clipboard
+- `</> ` — resize panes
+- `R` — reload
+- `backspace` — trash (with confirmation)
+- `q` — quit
 
 ## Coding Conventions
 
-- All code in `package main`, no sub-packages
 - Section separators: `// ── section name ────────────────`
-- Dark indigo/slate color palette using 256-color terminal indices
-- No named return values (except `layoutDimensions()`)
-- Errors set `m.status` for display; no panics
-- Preview size cap: 256KB (`maxPreviewBytes`), directory cap: 40 items
+- Theme colors via mutable `colors` export from `theme.ts`
+- Errors set `status` field for display
+- Preview size cap: 256KB (`MAX_PREVIEW_BYTES`), directory cap: 40 items
 
 ## Environment Variables
 
 | Variable | Effect |
 |---|---|
 | `SEER_NO_NERD_FONT=1` | Use plain Unicode instead of Nerd Font glyphs |
-| `COLORTERM=truecolor` | Enable truecolor image preview |
-| `NO_COLOR` | Disable truecolor image rendering |
+
+## Archive
+
+The original Go implementation is preserved in `archive/go-v0/`.
 
 ## Landing the Plane (Session Completion)
 
@@ -87,7 +99,7 @@ The codebase is split across focused files, all in `package main`, following the
 
 **MANDATORY WORKFLOW:**
 
-1. **Run quality gates** (if code changed) — `go fmt ./...`, `go vet ./...`, `go build .`
+1. **Run quality gates** (if code changed) — `bun run typecheck`
 2. **PUSH TO REMOTE** — This is MANDATORY:
    ```bash
    git pull --rebase

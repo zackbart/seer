@@ -4,24 +4,23 @@ import path from "path";
 import fsp from "fs/promises";
 
 import {
-  AppState, Entry, InputMode, YankMode, SortMode,
+  AppState, Entry, SortMode,
   SORT_MODE_COUNT, sortModeLabel,
 } from "./types.js";
-import { colors } from "./theme.js";
+import { colors, cycleTheme } from "./theme.js";
 import {
-  listDir, applySort, moveToTrash, pasteEntries,
+  listDir, applySort, moveToTrash,
   loadGitStatus, previewKey, fuzzyMatch,
 } from "./utils/fs.js";
 import { copyToClipboard } from "./utils/clipboard.js";
-import { previewPageSize } from "./utils/humanSize.js";
 import { buildPreview } from "./previews/index.js";
 import { cacheGet, cacheSet } from "./hooks/usePreviewCache.js";
 import { useKeyBindings } from "./hooks/useKeyBindings.js";
+import { useMouse } from "./hooks/useMouse.js";
 import { TopBar } from "./components/TopBar.js";
 import { FileList } from "./components/FileList.js";
 import { Preview } from "./components/Preview.js";
 import { BottomBar } from "./components/BottomBar.js";
-import { InputDialog } from "./components/InputDialog.js";
 import { DeleteDialog } from "./components/DeleteDialog.js";
 
 // ── action types ─────────────────────────────────────────────────────────────
@@ -87,23 +86,17 @@ function createInitialState(cwd: string): AppState {
     previewOffset: 0,
     loading: false,
     requestId: 0,
-    focusedPane: "files",
     searching: false,
     searchQuery: "",
     confirmingDelete: false,
     deleteTarget: "",
-    inputMode: InputMode.None,
-    inputValue: "",
-    yankPaths: [],
-    yankOp: YankMode.None,
-    multiSelected: new Set(),
     sortBy: SortMode.NameAsc,
-    dirHistory: [cwd],
-    historyPos: 0,
-    bookmarks: [],
     paneOffset: 0,
     gitStatus: null,
     gitLoadCwd: "",
+    previewSelecting: false,
+    previewSelStart: { x: 0, y: 0 },
+    previewSelEnd: { x: 0, y: 0 },
   };
 }
 
@@ -203,22 +196,12 @@ export function App({ startDir, cwdFile }: AppProps) {
     requestPreview(s.entries, idx);
   }, [requestPreview]);
 
-  const changeDir = useCallback(async (newPath: string, pushHistory = true) => {
+  const changeDir = useCallback(async (newPath: string) => {
     const s = stateRef.current;
     try {
       const raw = await listDir(newPath, s.showHidden);
       const sorted = applySort(raw, s.sortBy);
       const filtered = applySearch(sorted, s.searchQuery);
-
-      let history = [...s.dirHistory];
-      let histPos = s.historyPos;
-      if (pushHistory) {
-        if (histPos < history.length - 1) history = history.slice(0, histPos + 1);
-        if (history.length === 0 || history[history.length - 1] !== newPath) {
-          history.push(newPath);
-        }
-        histPos = history.length - 1;
-      }
 
       dispatch({
         type: "SET_STATE",
@@ -231,9 +214,6 @@ export function App({ startDir, cwdFile }: AppProps) {
           searchQuery: "",
           searching: false,
           status: newPath,
-          multiSelected: new Set(),
-          dirHistory: history,
-          historyPos: histPos,
         },
       });
 
@@ -280,29 +260,6 @@ export function App({ startDir, cwdFile }: AppProps) {
   const handleKey = useCallback(async (key: string, raw: string) => {
     const s = stateRef.current;
 
-    // ── input mode ─────────────────────────────────────────────────────
-    if (s.inputMode !== InputMode.None) {
-      if (key === "esc") {
-        dispatch({ type: "SET_STATE", payload: { inputMode: InputMode.None, inputValue: "", status: "cancelled" } });
-        return;
-      }
-      if (key === "enter") {
-        await confirmInput();
-        return;
-      }
-      if (key === "backspace") {
-        const runes = [...s.inputValue];
-        if (runes.length > 0) {
-          dispatch({ type: "SET_STATE", payload: { inputValue: runes.slice(0, -1).join("") } });
-        }
-        return;
-      }
-      if (raw.length === 1) {
-        dispatch({ type: "SET_STATE", payload: { inputValue: s.inputValue + raw } });
-      }
-      return;
-    }
-
     // ── delete confirmation ────────────────────────────────────────────
     if (s.confirmingDelete) {
       if (key === "y" || key === "Y" || key === "enter") {
@@ -339,40 +296,20 @@ export function App({ startDir, cwdFile }: AppProps) {
         return;
       }
 
-      // Navigation — j/k scroll the focused pane
+      // Navigation — keyboard always controls file list
       case "j":
       case "down":
-        if (s.focusedPane === "preview") {
-          const maxOff = Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8));
-          const newOff = Math.min(s.previewOffset + 1, maxOff);
-          dispatch({ type: "SET_STATE", payload: { previewOffset: newOff } });
-        } else {
-          if (s.selected < s.entries.length - 1) navigate(s.selected + 1);
-        }
+        if (s.selected < s.entries.length - 1) navigate(s.selected + 1);
         return;
       case "k":
       case "up":
-        if (s.focusedPane === "preview") {
-          const newOff = Math.max(0, s.previewOffset - 1);
-          dispatch({ type: "SET_STATE", payload: { previewOffset: newOff } });
-        } else {
-          if (s.selected > 0) navigate(s.selected - 1);
-        }
+        if (s.selected > 0) navigate(s.selected - 1);
         return;
       case "g":
-        if (s.focusedPane === "preview") {
-          dispatch({ type: "SET_STATE", payload: { previewOffset: 0 } });
-        } else {
-          navigate(0);
-        }
+        navigate(0);
         return;
       case "G":
-        if (s.focusedPane === "preview") {
-          const maxOff = Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8));
-          dispatch({ type: "SET_STATE", payload: { previewOffset: maxOff } });
-        } else {
-          if (s.entries.length > 0) navigate(s.entries.length - 1);
-        }
+        if (s.entries.length > 0) navigate(s.entries.length - 1);
         return;
       case "l":
       case "right":
@@ -403,58 +340,6 @@ export function App({ startDir, cwdFile }: AppProps) {
           }
         }
         return;
-
-      // History
-      case "alt+left":
-        if (s.historyPos > 0) {
-          const dest = s.dirHistory[s.historyPos - 1];
-          dispatch({ type: "SET_STATE", payload: { historyPos: s.historyPos - 1 } });
-          await changeDir(dest, false);
-        }
-        return;
-      case "alt+right":
-        if (s.historyPos < s.dirHistory.length - 1) {
-          const dest = s.dirHistory[s.historyPos + 1];
-          dispatch({ type: "SET_STATE", payload: { historyPos: s.historyPos + 1 } });
-          await changeDir(dest, false);
-        }
-        return;
-
-      // Tab — switch focused pane
-      case "tab": {
-        const next = s.focusedPane === "files" ? "preview" : "files";
-        dispatch({ type: "SET_STATE", payload: { focusedPane: next } });
-        return;
-      }
-
-      // Scroll — acts on whichever pane is focused
-      case "ctrl+d":
-      case "pagedown": {
-        const pageSize = previewPageSize(s.height);
-        if (s.focusedPane === "preview") {
-          const maxOff = Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8));
-          const newOffset = Math.min(s.previewOffset + pageSize, maxOff);
-          dispatch({ type: "SET_STATE", payload: { previewOffset: newOffset } });
-        } else {
-          // Scroll file list down by a page
-          const newSel = Math.min(s.selected + pageSize, s.entries.length - 1);
-          if (newSel !== s.selected) navigate(newSel);
-        }
-        return;
-      }
-      case "ctrl+u":
-      case "pageup": {
-        const pageSize = previewPageSize(s.height);
-        if (s.focusedPane === "preview") {
-          const newOffset = Math.max(0, s.previewOffset - pageSize);
-          dispatch({ type: "SET_STATE", payload: { previewOffset: newOffset } });
-        } else {
-          // Scroll file list up by a page
-          const newSel = Math.max(0, s.selected - pageSize);
-          if (newSel !== s.selected) navigate(newSel);
-        }
-        return;
-      }
 
       // Search
       case "/":
@@ -542,6 +427,13 @@ export function App({ startDir, cwdFile }: AppProps) {
         return;
       }
 
+      // Theme
+      case "t": {
+        const name = cycleTheme();
+        dispatch({ type: "SET_STATE", payload: { status: `theme: ${name}` } });
+        return;
+      }
+
       // Pane resize
       case "<": {
         const minOffset = -(Math.floor(s.width / 3) - 16);
@@ -558,83 +450,6 @@ export function App({ startDir, cwdFile }: AppProps) {
         return;
       }
 
-      // Multi-select
-      case "space":
-        if (s.entries.length > 0 && s.selected < s.entries.length) {
-          const p = s.entries[s.selected].path;
-          const newSet = new Set(s.multiSelected);
-          if (newSet.has(p)) newSet.delete(p); else newSet.add(p);
-          dispatch({ type: "SET_STATE", payload: { multiSelected: newSet } });
-          if (s.selected < s.entries.length - 1) navigate(s.selected + 1);
-        }
-        return;
-
-      // Yank / cut / paste
-      case "y": {
-        const paths = selectedPaths(s);
-        if (paths.length > 0) {
-          dispatch({
-            type: "SET_STATE",
-            payload: {
-              yankPaths: paths,
-              yankOp: YankMode.Copy,
-              multiSelected: new Set(),
-              status: paths.length === 1
-                ? `yanked: ${path.basename(paths[0])}`
-                : `yanked ${paths.length} files`,
-            },
-          });
-        }
-        return;
-      }
-      case "x": {
-        const paths = selectedPaths(s);
-        if (paths.length > 0) {
-          dispatch({
-            type: "SET_STATE",
-            payload: {
-              yankPaths: paths,
-              yankOp: YankMode.Cut,
-              multiSelected: new Set(),
-              status: paths.length === 1
-                ? `cut: ${path.basename(paths[0])}`
-                : `cut ${paths.length} files`,
-            },
-          });
-        }
-        return;
-      }
-      case "P": {
-        if (s.yankPaths.length === 0 || s.yankOp === YankMode.None) {
-          dispatch({ type: "SET_STATE", payload: { status: "nothing to paste (yank with y or x)" } });
-          return;
-        }
-        try {
-          const n = await pasteEntries(s.yankPaths, s.cwd, s.yankOp);
-          const payload: Partial<AppState> = { status: `pasted ${n} item(s)` };
-          if (s.yankOp === YankMode.Cut) {
-            payload.yankPaths = [];
-            payload.yankOp = YankMode.None;
-          }
-          dispatch({ type: "SET_STATE", payload });
-          await reloadDir();
-          requestPreview(stateRef.current.entries, stateRef.current.selected);
-        } catch (e) {
-          dispatch({ type: "SET_STATE", payload: { status: `paste failed: ${(e as Error).message}` } });
-        }
-        return;
-      }
-
-      // Rename
-      case "r":
-        if (s.entries.length > 0 && s.selected < s.entries.length) {
-          dispatch({
-            type: "SET_STATE",
-            payload: { inputMode: InputMode.Rename, inputValue: s.entries[s.selected].name },
-          });
-        }
-        return;
-
       // Reload
       case "R": {
         const filtered = await reloadDir();
@@ -643,39 +458,6 @@ export function App({ startDir, cwdFile }: AppProps) {
         loadGit(s.cwd);
         return;
       }
-
-      // New file / dir
-      case "n":
-        dispatch({ type: "SET_STATE", payload: { inputMode: InputMode.NewFile, inputValue: "" } });
-        return;
-      case "N":
-        dispatch({ type: "SET_STATE", payload: { inputMode: InputMode.NewDir, inputValue: "" } });
-        return;
-
-      // Open in editor
-      case "e":
-        if (s.entries.length > 0 && s.selected < s.entries.length) {
-          const entry = s.entries[s.selected];
-          if (entry.isDir) {
-            dispatch({ type: "SET_STATE", payload: { status: "can't edit a directory" } });
-            return;
-          }
-          const editor = process.env.EDITOR ?? process.env.VISUAL ?? "";
-          if (!editor) {
-            dispatch({ type: "SET_STATE", payload: { status: "$EDITOR not set" } });
-            return;
-          }
-          // Spawn editor synchronously, inheriting stdio
-          Bun.spawnSync([editor, entry.path], {
-            stdin: "inherit",
-            stdout: "inherit",
-            stderr: "inherit",
-          });
-          dispatch({ type: "SET_STATE", payload: { status: "returned from editor" } });
-          await reloadDir();
-          requestPreview(stateRef.current.entries, stateRef.current.selected);
-        }
-        return;
 
       // Copy path
       case "p":
@@ -689,111 +471,37 @@ export function App({ startDir, cwdFile }: AppProps) {
           }
         }
         return;
-
-      // Bookmarks
-      case "b": {
-        const bookmarks = [...s.bookmarks];
-        const idx = bookmarks.indexOf(s.cwd);
-        if (idx >= 0) {
-          bookmarks.splice(idx, 1);
-          dispatch({ type: "SET_STATE", payload: { bookmarks, status: `bookmark #${idx + 1} removed` } });
-        } else {
-          if (bookmarks.length >= 9) bookmarks.shift();
-          bookmarks.push(s.cwd);
-          dispatch({ type: "SET_STATE", payload: { bookmarks, status: `bookmarked at #${bookmarks.length}` } });
-        }
-        return;
-      }
-      case "1": case "2": case "3": case "4": case "5":
-      case "6": case "7": case "8": case "9": {
-        const n = parseInt(key);
-        if (n >= 1 && n <= s.bookmarks.length) {
-          await changeDir(s.bookmarks[n - 1]);
-        } else {
-          dispatch({ type: "SET_STATE", payload: { status: `no bookmark #${n}` } });
-        }
-        return;
-      }
     }
   }, [exit, navigate, changeDir, reloadDir, requestPreview, loadGit, cwdFile]);
-
-  // ── confirm input helper ─────────────────────────────────────────────
-
-  const confirmInput = useCallback(async () => {
-    const s = stateRef.current;
-    const name = s.inputValue.trim();
-    if (!name) {
-      dispatch({ type: "SET_STATE", payload: { inputMode: InputMode.None, inputValue: "", status: "cancelled" } });
-      return;
-    }
-
-    const mode = s.inputMode;
-    dispatch({ type: "SET_STATE", payload: { inputMode: InputMode.None, inputValue: "" } });
-
-    try {
-      switch (mode) {
-        case InputMode.Rename:
-          if (s.selected < s.entries.length) {
-            const old = s.entries[s.selected].path;
-            const newPath = path.join(s.cwd, name);
-            await fsp.rename(old, newPath);
-            dispatch({ type: "SET_STATE", payload: { status: `renamed → ${name}` } });
-          }
-          break;
-        case InputMode.NewFile: {
-          const newPath = path.join(s.cwd, name);
-          await fsp.writeFile(newPath, "");
-          dispatch({ type: "SET_STATE", payload: { status: `created ${name}` } });
-          break;
-        }
-        case InputMode.NewDir: {
-          const newPath = path.join(s.cwd, name);
-          await fsp.mkdir(newPath, { recursive: true });
-          dispatch({ type: "SET_STATE", payload: { status: `created ${name}/` } });
-          break;
-        }
-      }
-    } catch (e) {
-      dispatch({ type: "SET_STATE", payload: { status: `failed: ${(e as Error).message}` } });
-    }
-
-    const filtered = await reloadDir();
-    if (filtered) {
-      // Try to select the named entry
-      for (let i = 0; i < filtered.length; i++) {
-        if (filtered[i].name === name) {
-          dispatch({ type: "SET_STATE", payload: { selected: i } });
-          break;
-        }
-      }
-      requestPreview(filtered, stateRef.current.selected);
-    }
-  }, [reloadDir, requestPreview]);
 
   // ── delete helper ────────────────────────────────────────────────────
 
   const handleDelete = useCallback(async () => {
     const s = stateRef.current;
-    const targets = s.multiSelected.size > 0
-      ? [...s.multiSelected]
-      : s.deleteTarget ? [s.deleteTarget] : [];
+    const target = s.deleteTarget;
+    if (!target) return;
 
-    let deleted = 0;
-    let lastErr: Error | null = null;
-    for (const t of targets) {
-      try { await moveToTrash(t); deleted++; } catch (e) { lastErr = e as Error; }
+    try {
+      await moveToTrash(target);
+      dispatch({
+        type: "SET_STATE",
+        payload: {
+          confirmingDelete: false,
+          deleteTarget: "",
+          preview: "",
+          status: `moved to trash: ${path.basename(target)}`,
+        },
+      });
+    } catch (e) {
+      dispatch({
+        type: "SET_STATE",
+        payload: {
+          confirmingDelete: false,
+          deleteTarget: "",
+          status: `trash failed: ${(e as Error).message}`,
+        },
+      });
     }
-
-    dispatch({
-      type: "SET_STATE",
-      payload: {
-        confirmingDelete: false,
-        deleteTarget: "",
-        multiSelected: new Set(),
-        preview: "",
-        status: lastErr ? `trash failed: ${lastErr.message}` : `moved ${deleted} to trash`,
-      },
-    });
 
     const filtered = await reloadDir();
     if (filtered) requestPreview(filtered, stateRef.current.selected);
@@ -801,6 +509,99 @@ export function App({ startDir, cwdFile }: AppProps) {
 
   // Register key handler
   useKeyBindings(handleKey);
+
+  // Mouse handler — scroll + preview text selection
+  const handleMouse = useCallback((event: import("./hooks/useMouse.js").MouseEvent) => {
+    const s = stateRef.current;
+
+    // Scroll wheel — scroll whichever pane the mouse is over
+    if (event.button === 64 || event.button === 65) {
+      const direction = event.button === 64 ? "up" : "down";
+      const { leftW } = layoutDimensions(s.width, s.height, s.paneOffset);
+      const overPreview = event.x > leftW;
+
+      if (overPreview) {
+        const maxOff = Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8));
+        const newOff = direction === "down"
+          ? Math.min(s.previewOffset + 1, maxOff)
+          : Math.max(s.previewOffset - 1, 0);
+        dispatch({ type: "SET_STATE", payload: { previewOffset: newOff } });
+      } else {
+        const delta = direction === "down" ? 1 : -1;
+        const newSel = Math.max(0, Math.min(s.selected + delta, s.entries.length - 1));
+        if (newSel !== s.selected) {
+          dispatch({ type: "NAVIGATE", idx: newSel });
+          requestPreview(s.entries, newSel);
+        }
+      }
+      return;
+    }
+
+    // Preview text selection — left button only
+    if (event.button !== 0) return;
+
+    const { leftW, rightW, bodyH } = layoutDimensions(s.width, s.height, s.paneOffset);
+    // Preview body rect — SGR mouse coords are 1-based
+    // X: leftPane(leftW) + separator(1) + previewBorder(1) + 1 for 1-based
+    const pStartX = leftW + 3;
+    // Y: topbar(1) + paneBorder(1) + header(1) + divider(1) + 1 for 1-based
+    const pStartY = 5;
+    const pWidth = Math.max(1, rightW - 2);
+    const pHeight = Math.max(1, bodyH - 4);
+
+    const toPoint = (mx: number, my: number) => ({
+      x: Math.max(0, Math.min(mx - pStartX, pWidth - 1)),
+      y: Math.max(0, Math.min(my - pStartY, pHeight - 1)),
+    });
+
+    const inPreviewBody = event.x >= pStartX && event.x < pStartX + pWidth
+      && event.y >= pStartY && event.y < pStartY + pHeight;
+
+    if (event.action === "press" && inPreviewBody) {
+      const p = toPoint(event.x, event.y);
+      dispatch({
+        type: "SET_STATE",
+        payload: { previewSelecting: true, previewSelStart: p, previewSelEnd: p },
+      });
+    } else if (event.action === "drag" && s.previewSelecting) {
+      const p = toPoint(event.x, event.y);
+      dispatch({ type: "SET_STATE", payload: { previewSelEnd: p } });
+    } else if (event.action === "release" && s.previewSelecting) {
+      const p = toPoint(event.x, event.y);
+      const start = s.previewSelStart;
+      const end = p;
+
+      dispatch({
+        type: "SET_STATE",
+        payload: { previewSelecting: false, previewSelEnd: end },
+      });
+
+      // Normalize start/end
+      let s0 = start, s1 = end;
+      if (s0.y > s1.y || (s0.y === s1.y && s0.x > s1.x)) {
+        [s0, s1] = [s1, s0];
+      }
+      if (s0.x === s1.x && s0.y === s1.y) return; // no selection
+
+      // Extract visible preview lines (plain text)
+      const lines = getVisiblePreviewLines(s, pWidth, pHeight);
+      const selected: string[] = [];
+      for (let row = s0.y; row <= s1.y; row++) {
+        const line = row < lines.length ? lines[row] : "";
+        const colStart = row === s0.y ? s0.x : 0;
+        const colEnd = row === s1.y ? s1.x : pWidth;
+        selected.push(line.slice(colStart, colEnd));
+      }
+      const text = selected.join("\n").trimEnd();
+      if (!text) return;
+
+      copyToClipboard(text)
+        .then(() => dispatch({ type: "SET_STATE", payload: { status: `copied ${text.length} chars` } }))
+        .catch((e) => dispatch({ type: "SET_STATE", payload: { status: `copy failed: ${(e as Error).message}` } }));
+    }
+  }, [requestPreview]);
+
+  useMouse(handleMouse);
 
   // ── render ───────────────────────────────────────────────────────────
 
@@ -814,16 +615,6 @@ export function App({ startDir, cwdFile }: AppProps) {
   const sepStr = Array.from({ length: bodyH }, () => "│").join("\n");
 
   // Overlays
-  if (state.inputMode !== InputMode.None) {
-    return (
-      <Box flexDirection="column" width={state.width} height={state.height}>
-        <TopBar state={state} width={state.width} />
-        <InputDialog state={state} width={state.width} height={bodyH} />
-        <BottomBar state={state} width={state.width} />
-      </Box>
-    );
-  }
-
   if (state.confirmingDelete) {
     return (
       <Box flexDirection="column" width={state.width} height={state.height}>
@@ -856,10 +647,35 @@ function applySearch(entries: Entry[], query: string): Entry[] {
   return entries.filter((e) => fuzzyMatch(e.name, query));
 }
 
-function selectedPaths(state: AppState): string[] {
-  if (state.multiSelected.size > 0) return [...state.multiSelected];
-  if (state.entries.length > 0 && state.selected < state.entries.length) {
-    return [state.entries[state.selected].path];
+// Strip ANSI escape codes from a string.
+function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+}
+
+// Get the plain-text visible preview lines (matching what Preview.tsx renders).
+function getVisiblePreviewLines(state: AppState, width: number, height: number): string[] {
+  let body = state.preview;
+  if (!body && !state.loading) body = "  no preview";
+  if (state.loading && !body) body = "  loading…";
+
+  const allLines = body.split("\n");
+  const maxOffset = Math.max(0, allLines.length - height);
+  const offset = Math.min(state.previewOffset, maxOffset);
+
+  let contentH = height;
+  const result: string[] = [];
+
+  if (offset > 0) {
+    contentH--;
+    result.push(`  ↑ line ${offset + 1}`);
   }
-  return [];
+
+  const visible = allLines.slice(offset, offset + contentH);
+  for (const line of visible) {
+    result.push(stripAnsi(line).slice(0, width));
+  }
+
+  // Pad to height
+  while (result.length < height) result.push("");
+  return result.slice(0, height);
 }

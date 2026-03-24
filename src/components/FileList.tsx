@@ -39,9 +39,6 @@ export function FileList({ state, width, height }: Props) {
     <Box key={`slot-${slot++}`}>
       <Text color={colors.accent}>◈</Text>
       <Text color={colors.title} bold> Explorer</Text>
-      {state.multiSelected.size > 0 && (
-        <Text color={colors.success}> {state.multiSelected.size}sel</Text>
-      )}
       <Box flexGrow={1} />
       <Text color={colors.dim}>{state.entries.length}</Text>
     </Box>,
@@ -94,7 +91,6 @@ export function FileList({ state, width, height }: Props) {
       const clr = entryColor(e);
       const bold = entryBold(e);
       const isSel = i === state.selected;
-      const isMulti = state.multiSelected.has(e.path);
 
       let displayName = e.name;
       if (e.isDir) displayName += "/";
@@ -114,10 +110,9 @@ export function FileList({ state, width, height }: Props) {
       }
 
       if (isSel) {
-        const markerClr = isMulti ? colors.success : colors.accent;
         rows.push(
           <Box key={`slot-${slot++}`}>
-            <Text color={markerClr}>┃</Text>
+            <Text color={colors.accent}>┃</Text>
             <Text color={colors.accentFg} bold backgroundColor={colors.surfaceElevated}>
               {" "}{icon}{displayName}
             </Text>
@@ -131,11 +126,9 @@ export function FileList({ state, width, height }: Props) {
           </Box>,
         );
       } else {
-        const prefix = isMulti ? "◆" : " ";
-        const prefixClr = isMulti ? colors.success : undefined;
         rows.push(
           <Box key={`slot-${slot++}`}>
-            <Text color={prefixClr}>{prefix}</Text>
+            <Text> </Text>
             <Text color={clr} bold={bold}>{icon}{displayName}</Text>
             <Box flexGrow={1} />
             {gitBadge}
@@ -165,7 +158,7 @@ export function FileList({ state, width, height }: Props) {
       width={width}
       height={height}
       borderStyle="round"
-      borderColor={state.focusedPane === "files" ? colors.borderStrong : colors.border}
+      borderColor={colors.borderStrong}
       overflow="hidden"
     >
       {rows}

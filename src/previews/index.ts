@@ -54,8 +54,12 @@ export async function buildPreview(
       return buildHexPreview(data, path.basename(filePath), stat.size, stat.mtime);
     }
 
-    // Normalize line endings
+    // Normalize line endings and expand tabs to spaces.
+    // Tabs must be expanded because Ink's width measurement treats \t as 0-width
+    // while the terminal renders them at 8-column tab stops, causing lines to
+    // overflow the preview pane.
     text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+    text = text.replace(/\t/g, "    ");
 
     const truncated = bytesRead === MAX_PREVIEW_BYTES;
 

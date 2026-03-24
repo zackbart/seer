@@ -11,14 +11,8 @@ interface Props {
 
 export function DeleteDialog({ state, width, height }: Props) {
   const dialogWidth = Math.min(56, Math.max(36, width - 12));
-  const targets = state.multiSelected.size > 0
-    ? [...state.multiSelected]
-    : state.deleteTarget ? [state.deleteTarget] : [];
-
-  const fileName = targets.length === 1
-    ? path.basename(targets[0])
-    : `${targets.length} items`;
-  const meta = targets.length === 1 ? "file" : "multiple files / folders";
+  const fileName = state.deleteTarget ? path.basename(state.deleteTarget) : "";
+  const meta = "file";
 
   const topPad = Math.max(0, Math.floor((height - 10) / 2));
 

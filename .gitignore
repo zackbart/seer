@@ -1,11 +1,10 @@
-# bv (beads viewer) local config and caches
-.bv/
-
-# local beads database and locks
-.beads/
+# dependencies
+node_modules/
 
 # build outputs
 seer
+dist/
+*.tsbuildinfo
 
 # os/editor
 .DS_Store

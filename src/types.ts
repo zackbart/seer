@@ -31,26 +31,6 @@ export const sortModeLabel: Record<SortMode, string> = {
   [SortMode.ModifiedAsc]: "date ↑",
 };
 
-export enum InputMode {
-  None = 0,
-  Rename = 1,
-  NewFile = 2,
-  NewDir = 3,
-}
-
-export const inputModeTitle: Record<InputMode, string> = {
-  [InputMode.None]: "",
-  [InputMode.Rename]: "Rename",
-  [InputMode.NewFile]: "New File",
-  [InputMode.NewDir]: "New Directory",
-};
-
-export enum YankMode {
-  None = 0,
-  Copy = 1,
-  Cut = 2,
-}
-
 // ── entry ────────────────────────────────────────────────────────────────────
 
 export interface Entry {
@@ -80,33 +60,23 @@ export interface AppState {
   loading: boolean;
   requestId: number;
 
-  focusedPane: "files" | "preview";
-
   searching: boolean;
   searchQuery: string;
 
   confirmingDelete: boolean;
   deleteTarget: string;
 
-  inputMode: InputMode;
-  inputValue: string;
-
-  yankPaths: string[];
-  yankOp: YankMode;
-
-  multiSelected: Set<string>;
-
   sortBy: SortMode;
-
-  dirHistory: string[];
-  historyPos: number;
-
-  bookmarks: string[];
 
   paneOffset: number;
 
   gitStatus: Map<string, string> | null;
   gitLoadCwd: string;
+
+  // Preview text selection (click-drag to copy)
+  previewSelecting: boolean;
+  previewSelStart: { x: number; y: number };
+  previewSelEnd: { x: number; y: number };
 }
 
 // ── constants ────────────────────────────────────────────────────────────────

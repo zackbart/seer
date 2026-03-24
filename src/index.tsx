@@ -7,7 +7,7 @@ import { App } from "./App.js";
 // Ensure true-color support for chalk (used by preview renderers)
 if (chalk.level < 3) chalk.level = 3;
 
-const version = "0.5.0";
+const version = "1.0.0";
 
 function printHelp() {
   console.log(`seer ${version}`);
@@ -37,23 +37,14 @@ function printHelp() {
   console.log("  l/enter     Open directory");
   console.log("  h           Go to parent");
   console.log("  g/G         Top/bottom");
-  console.log("  alt+←/→     History back/forward");
-  console.log("  r           Rename");
-  console.log("  R           Reload");
-  console.log("  n / N       New file / New directory");
-  console.log("  e           Open in $EDITOR");
-  console.log("  y / x       Yank (copy) / Cut");
-  console.log("  P           Paste");
-  console.log("  space       Multi-select toggle");
-  console.log("  s           Cycle sort mode");
-  console.log("  b           Bookmark current directory");
-  console.log("  1-9         Jump to bookmark slot");
-  console.log("  < / >       Resize left pane");
   console.log("  /           Fuzzy search");
   console.log("  .           Toggle hidden files");
+  console.log("  s           Cycle sort mode");
   console.log("  p           Copy path to clipboard");
+  console.log("  < / >       Resize panes");
+  console.log("  t           Cycle theme");
+  console.log("  R           Reload");
   console.log("  backspace   Move to trash");
-  console.log("  ctrl+d/u    Scroll preview");
   console.log("  q           Quit");
 }
 
@@ -82,12 +73,18 @@ for (const arg of process.argv.slice(2)) {
 // Resolve start directory
 const resolvedDir = startDir ? path.resolve(startDir) : process.cwd();
 
-// Enter alt-screen (same as Go's tea.WithAltScreen)
+// Enter alt-screen and enable mouse reporting
 process.stdout.write("\x1b[?1049h"); // enter alt screen
 process.stdout.write("\x1b[?25l");   // hide cursor
+process.stdout.write("\x1b[?1000h"); // enable mouse button reporting
+process.stdout.write("\x1b[?1002h"); // enable mouse cell-motion reporting
+process.stdout.write("\x1b[?1006h"); // enable SGR extended mouse mode
 
 // Clean up on exit
 function cleanup() {
+  process.stdout.write("\x1b[?1006l"); // disable SGR mouse
+  process.stdout.write("\x1b[?1002l"); // disable cell-motion
+  process.stdout.write("\x1b[?1000l"); // disable mouse reporting
   process.stdout.write("\x1b[?25h");   // show cursor
   process.stdout.write("\x1b[?1049l"); // leave alt screen
 }

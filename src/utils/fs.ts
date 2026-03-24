@@ -1,7 +1,7 @@
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
-import { Entry, SortMode, YankMode } from "../types.js";
+import { Entry, SortMode } from "../types.js";
 
 // ── directory listing ────────────────────────────────────────────────────────
 
@@ -120,76 +120,6 @@ export async function moveToTrash(filePath: string): Promise<void> {
     }
   }
   await fsp.rename(filePath, destPath);
-}
-
-// ── copy / paste ─────────────────────────────────────────────────────────────
-
-async function uniqueDstPath(dir: string, name: string): Promise<string> {
-  let dst = path.join(dir, name);
-  try {
-    await fsp.access(dst);
-  } catch {
-    return dst;
-  }
-  const ext = path.extname(name);
-  const stem = name.slice(0, name.length - ext.length);
-  for (let i = 1; i <= 10000; i++) {
-    const candidate = path.join(dir, `${stem} (${i})${ext}`);
-    try {
-      await fsp.access(candidate);
-    } catch {
-      return candidate;
-    }
-  }
-  return path.join(dir, `${stem} (${Date.now()})${ext}`);
-}
-
-async function copyEntry(src: string, dst: string): Promise<void> {
-  const stat = await fsp.stat(src);
-  if (stat.isDirectory()) {
-    await copyDir(src, dst);
-  } else {
-    await fsp.copyFile(src, dst);
-  }
-}
-
-async function copyDir(src: string, dst: string): Promise<void> {
-  const stat = await fsp.stat(src);
-  await fsp.mkdir(dst, { recursive: true, mode: stat.mode });
-  const items = await fsp.readdir(src);
-  for (const item of items) {
-    await copyEntry(path.join(src, item), path.join(dst, item));
-  }
-}
-
-export async function pasteEntries(
-  paths: string[],
-  dstDir: string,
-  op: YankMode,
-): Promise<number> {
-  let count = 0;
-  for (const src of paths) {
-    const name = path.basename(src);
-    const dst = await uniqueDstPath(dstDir, name);
-
-    if (op === YankMode.Cut) {
-      try {
-        await fsp.rename(src, dst);
-      } catch {
-        try {
-          await copyEntry(src, dst);
-          await fsp.rm(src, { recursive: true });
-        } catch (e) {
-          await fsp.rm(dst, { recursive: true }).catch(() => {});
-          throw e;
-        }
-      }
-    } else {
-      await copyEntry(src, dst);
-    }
-    count++;
-  }
-  return count;
 }
 
 // ── git status ───────────────────────────────────────────────────────────────
