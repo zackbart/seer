@@ -1,5 +1,5 @@
+import React from "react";
 import { Box, Text } from "ink";
-import chalk from "chalk";
 import { AppState, InputMode } from "../types.js";
 import { colors } from "../theme.js";
 
@@ -15,25 +15,29 @@ interface Hint {
 
 export function BottomBar({ state, width }: Props) {
   // ── status line ────────────────────────────────────────────────────
-  let statusText: string;
+  let statusContent: React.ReactNode;
 
   if (state.searching) {
-    statusText = [
-      chalk.hex(colors.accent).bold("/"),
-      chalk.hex(colors.accentFg)(state.searchQuery),
-      chalk.hex(colors.accent)("▎"),
-      chalk.hex(colors.dim)(" fuzzy"),
-    ].join("");
+    statusContent = (
+      <>
+        <Text color={colors.accent} bold>/ </Text>
+        <Text color={colors.accentFg}>{state.searchQuery}</Text>
+        <Text color={colors.accent}>▎</Text>
+        <Text color={colors.dim}>  fuzzy</Text>
+      </>
+    );
   } else if (state.inputMode !== InputMode.None) {
     const title = state.inputMode === InputMode.Rename ? "Rename"
       : state.inputMode === InputMode.NewFile ? "New File" : "New Directory";
-    statusText = chalk.hex(colors.accent).bold(`${title}`);
+    statusContent = <Text color={colors.accent} bold>{title}</Text>;
   } else {
     const isReady = state.status === "ready";
-    const dot = isReady
-      ? chalk.hex(colors.success)("●")
-      : chalk.hex(colors.accent)("●");
-    statusText = `${dot} ${chalk.hex(colors.status)(state.status)}`;
+    statusContent = (
+      <>
+        <Text color={isReady ? colors.success : colors.accent}>● </Text>
+        <Text color={colors.status}>{state.status}</Text>
+      </>
+    );
   }
 
   // ── key hints ──────────────────────────────────────────────────────
@@ -67,34 +71,39 @@ export function BottomBar({ state, width }: Props) {
     ];
   }
 
-  // Build hint string with budget checking
-  const key = chalk.hex(colors.hintKey).bold;
-  const desc = chalk.hex(colors.hintText);
-  const sep = chalk.hex(colors.dim)(" │ ");
-
-  const parts: string[] = [];
+  // Budget-check hints against width
+  const hintElements: React.ReactNode[] = [];
   let used = 2;
   for (let i = 0; i < hints.length; i++) {
     const h = hints[i];
     const segLen = h.key.length + 1 + h.desc.length;
     const sepLen = i > 0 ? 3 : 0;
     if (used + sepLen + segLen > width - 1) break;
-    if (i > 0) { parts.push(sep); used += 3; }
-    parts.push(`${key(h.key)} ${desc(h.desc)}`);
+    if (i > 0) {
+      hintElements.push(<Text key={`sep-${i}`} color={colors.dim}> │ </Text>);
+      used += 3;
+    }
+    hintElements.push(
+      <React.Fragment key={`hint-${i}`}>
+        <Text color={colors.hintKey} bold>{h.key}</Text>
+        <Text color={colors.hintText}> {h.desc}</Text>
+      </React.Fragment>,
+    );
     used += segLen;
   }
-  const hintsText = parts.join("");
 
   return (
     <Box flexDirection="column" width={width} height={2}>
       <Box width={width} height={1}>
-        <Text backgroundColor={colors.surface}> {statusText}</Text>
+        <Text backgroundColor={colors.surface}> </Text>
+        {statusContent}
         <Box flexGrow={1}>
           <Text backgroundColor={colors.surface}> </Text>
         </Box>
       </Box>
       <Box width={width} height={1}>
-        <Text backgroundColor={colors.surface}> {hintsText}</Text>
+        <Text backgroundColor={colors.surface}> </Text>
+        {hintElements}
         <Box flexGrow={1}>
           <Text backgroundColor={colors.surface}> </Text>
         </Box>

@@ -1,6 +1,6 @@
+import React from "react";
 import { Box, Text } from "ink";
 import path from "path";
-import chalk from "chalk";
 import { AppState } from "../types.js";
 import { categorise, fileIconExt, entryColor, symlinkIcon, colors } from "../theme.js";
 import { humanSize } from "../utils/humanSize.js";
@@ -13,79 +13,82 @@ interface Props {
 
 export function Preview({ state, width, height }: Props) {
   const innerH = Math.max(3, height - 2);
-  const headerLines: string[] = [];
+  const rows: React.ReactNode[] = [];
+  let slot = 0;
 
-  // ── header ─────────────────────────────────────────────────────────
+  // ── header row ─────────────────────────────────────────────────────
   if (state.entries.length > 0 && state.selected < state.entries.length) {
     const e = state.entries[state.selected];
     const cat = categorise(e);
     const icon = e.isSymlink ? symlinkIcon() : fileIconExt(cat, path.extname(e.name));
     const clr = entryColor(e);
 
-    let name = icon + e.name;
-    if (e.isDir) name += "/";
-    if (e.isSymlink && e.symlinkTarget) name += chalk.hex(colors.dim)(` → ${e.symlinkTarget}`);
+    let suffix = "";
+    if (e.isDir) suffix = "/";
+    const symlinkSuffix = e.isSymlink && e.symlinkTarget ? ` → ${e.symlinkTarget}` : "";
 
-    const styledName = chalk.hex(clr).bold(name);
-
-    let meta: string;
+    let meta: React.ReactNode;
     if (state.loading) {
-      meta = chalk.hex(colors.loading)("loading…");
+      meta = <Text color={colors.loading}>loading…</Text>;
     } else if (!e.isDir) {
-      const size = chalk.hex(colors.muted)(humanSize(e.size));
-      const date = chalk.hex(colors.dim)(
-        e.modTime.toLocaleDateString("en-US", { month: "short", day: "2-digit" }) +
-        " " +
-        e.modTime.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
-      );
-      meta = `${size}  ${date}`;
+      meta = <Text color={colors.muted}>{humanSize(e.size)}  {formatDate(e.modTime)}</Text>;
     } else {
-      meta = chalk.hex(colors.dim)(
-        e.modTime.toLocaleDateString("en-US", { month: "short", day: "2-digit" })
-      );
+      meta = <Text color={colors.dim}>{formatDate(e.modTime)}</Text>;
     }
 
-    headerLines.push(` ${styledName}  ${meta}`);
+    rows.push(
+      <Box key={`slot-${slot++}`}>
+        <Text color={clr} bold> {icon}{e.name}{suffix}</Text>
+        {symlinkSuffix && <Text color={colors.dim}>{symlinkSuffix}</Text>}
+        <Box flexGrow={1} />
+        {meta}
+        <Text> </Text>
+      </Box>,
+    );
   } else {
-    headerLines.push(chalk.hex(colors.dim)(" no selection"));
+    rows.push(
+      <Box key={`slot-${slot++}`}>
+        <Text color={colors.dim}> no selection</Text>
+      </Box>,
+    );
   }
 
-  // Thin separator
-  headerLines.push(chalk.hex(colors.dim)("─".repeat(Math.max(1, width - 2))));
+  // ── divider ────────────────────────────────────────────────────────
+  rows.push(
+    <Box key={`slot-${slot++}`}>
+      <Text color={colors.dim}>{"─".repeat(Math.max(1, width - 2))}</Text>
+    </Box>,
+  );
 
   // ── body ───────────────────────────────────────────────────────────
+  const bodyH = Math.max(1, innerH - 2);
   let previewBody = state.preview;
-  if (!previewBody && !state.loading) previewBody = chalk.hex(colors.dim)("  no preview");
-  if (state.loading && !previewBody) previewBody = chalk.hex(colors.loading)("  loading…");
+  if (!previewBody && !state.loading) previewBody = "  no preview";
+  if (state.loading && !previewBody) previewBody = "  loading…";
 
-  const previewH = Math.max(1, innerH - 2);
-  const previewLines = previewBody.split("\n");
-
-  const maxOffset = Math.max(0, previewLines.length - previewH);
+  const allLines = previewBody.split("\n");
+  const maxOffset = Math.max(0, allLines.length - bodyH);
   const offset = Math.min(state.previewOffset, maxOffset);
 
-  let displayLines: string[];
-  const bodyLines: string[] = [];
-
   if (offset > 0) {
-    bodyLines.push(chalk.hex(colors.scrollbar)(`  ↑ line ${offset + 1}`));
-    const contentH = Math.max(1, previewH - 1);
-    displayLines = previewLines.slice(offset, offset + contentH);
-  } else {
-    displayLines = previewLines.slice(0, previewH);
+    rows.push(
+      <Box key={`slot-${slot++}`}>
+        <Text color={colors.scrollbar}>  ↑ line {offset + 1}</Text>
+      </Box>,
+    );
   }
 
-  bodyLines.push(...displayLines);
+  const contentH = offset > 0 ? bodyH - 1 : bodyH;
+  const visibleLines = allLines.slice(offset, offset + contentH);
 
-  // Pad to fixed height
-  while (bodyLines.length < previewH) {
-    bodyLines.push("");
-  }
-
-  const allLines = [...headerLines, ...bodyLines];
-  while (allLines.length < innerH) {
-    allLines.push("");
-  }
+  // Render preview as a single Text block to keep ANSI codes intact
+  // (shiki/chroma produce raw ANSI which Ink's Text renders correctly)
+  const bodyText = visibleLines.join("\n");
+  rows.push(
+    <Box key={`slot-${slot++}`} height={contentH}>
+      <Text>{bodyText || " "}</Text>
+    </Box>,
+  );
 
   return (
     <Box
@@ -95,7 +98,15 @@ export function Preview({ state, width, height }: Props) {
       borderStyle="round"
       borderColor={colors.borderStrong}
     >
-      <Text>{allLines.join("\n")}</Text>
+      {rows}
     </Box>
   );
+}
+
+function formatDate(d: Date): string {
+  const month = d.toLocaleDateString("en-US", { month: "short" });
+  const day = d.getDate().toString().padStart(2, "0");
+  const h = d.getHours().toString().padStart(2, "0");
+  const m = d.getMinutes().toString().padStart(2, "0");
+  return `${month} ${day} ${h}:${m}`;
 }

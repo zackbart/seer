@@ -8,7 +8,6 @@ import {
   SORT_MODE_COUNT, sortModeLabel,
 } from "./types.js";
 import { colors } from "./theme.js";
-import chalk from "chalk";
 import {
   listDir, applySort, moveToTrash, pasteEntries,
   loadGitStatus, previewKey, fuzzyMatch,
@@ -770,9 +769,8 @@ export function App({ startDir, cwdFile }: AppProps) {
 
   const { leftW, rightW, bodyH } = layoutDimensions(state.width, state.height, state.paneOffset);
 
-  // Separator: single chalk string, stable child count
-  const sepChar = chalk.ansi256(Number(colors.dim))("│");
-  const sepStr = Array.from({ length: bodyH }, () => sepChar).join("\n");
+  // Separator: single string, stable child count
+  const sepStr = Array.from({ length: bodyH }, () => "│").join("\n");
 
   // Overlays
   if (state.inputMode !== InputMode.None) {
@@ -801,7 +799,7 @@ export function App({ startDir, cwdFile }: AppProps) {
       <Box flexDirection="row" height={bodyH}>
         <FileList state={state} width={leftW} height={bodyH} />
         <Box width={1} height={bodyH}>
-          <Text>{sepStr}</Text>
+          <Text color={colors.dim}>{sepStr}</Text>
         </Box>
         <Preview state={state} width={rightW} height={bodyH} />
       </Box>
