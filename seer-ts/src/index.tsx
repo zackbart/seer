@@ -1,7 +1,11 @@
 #!/usr/bin/env bun
+import chalk from "chalk";
 import { render } from "ink";
 import path from "path";
 import { App } from "./App.js";
+
+// Ensure true-color support for chalk (used by preview renderers)
+if (chalk.level < 3) chalk.level = 3;
 
 const version = "0.5.0";
 
