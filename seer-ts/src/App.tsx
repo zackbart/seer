@@ -339,20 +339,40 @@ export function App({ startDir, cwdFile }: AppProps) {
         return;
       }
 
-      // Navigation
+      // Navigation — j/k scroll the focused pane
       case "j":
       case "down":
-        if (s.selected < s.entries.length - 1) navigate(s.selected + 1);
+        if (s.focusedPane === "preview") {
+          const maxOff = Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8));
+          const newOff = Math.min(s.previewOffset + 1, maxOff);
+          dispatch({ type: "SET_STATE", payload: { previewOffset: newOff } });
+        } else {
+          if (s.selected < s.entries.length - 1) navigate(s.selected + 1);
+        }
         return;
       case "k":
       case "up":
-        if (s.selected > 0) navigate(s.selected - 1);
+        if (s.focusedPane === "preview") {
+          const newOff = Math.max(0, s.previewOffset - 1);
+          dispatch({ type: "SET_STATE", payload: { previewOffset: newOff } });
+        } else {
+          if (s.selected > 0) navigate(s.selected - 1);
+        }
         return;
       case "g":
-        navigate(0);
+        if (s.focusedPane === "preview") {
+          dispatch({ type: "SET_STATE", payload: { previewOffset: 0 } });
+        } else {
+          navigate(0);
+        }
         return;
       case "G":
-        if (s.entries.length > 0) navigate(s.entries.length - 1);
+        if (s.focusedPane === "preview") {
+          const maxOff = Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8));
+          dispatch({ type: "SET_STATE", payload: { previewOffset: maxOff } });
+        } else {
+          if (s.entries.length > 0) navigate(s.entries.length - 1);
+        }
         return;
       case "l":
       case "right":
