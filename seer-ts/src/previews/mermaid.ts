@@ -21,6 +21,6 @@ export async function renderMermaid(text: string): Promise<string> {
   } catch {}
 
   // Fallback: show raw text with a note
-  const mutedStyle = chalk.ansi256(Number(colors.muted));
+  const mutedStyle = chalk.hex(colors.muted);
   return mutedStyle("(install @mermaid-js/mermaid-cli for rendered preview)") + "\n\n" + text;
 }

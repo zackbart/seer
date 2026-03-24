@@ -10,28 +10,34 @@ interface Props {
 }
 
 export function TopBar({ state, width }: Props) {
-  // Right side: count info
-  let count = `${state.entries.length} items`;
-  if (state.showHidden) count += " (hidden)";
-  if (state.sortBy !== SortMode.NameAsc) count += `  ${sortModeLabel[state.sortBy]}`;
-  if (state.multiSelected.size > 0) count += `  ${state.multiSelected.size} selected`;
+  // Right side info badges
+  const badges: string[] = [];
+  badges.push(chalk.hex(colors.muted)(`${state.entries.length} items`));
+  if (state.showHidden) badges.push(chalk.hex(colors.accent).dim("hidden"));
+  if (state.sortBy !== SortMode.NameAsc) {
+    badges.push(chalk.hex(colors.accent)(sortModeLabel[state.sortBy]));
+  }
+  if (state.multiSelected.size > 0) {
+    badges.push(chalk.hex(colors.success).bold(`${state.multiSelected.size} sel`));
+  }
   if (state.yankPaths.length > 0 && state.yankOp !== YankMode.None) {
-    const op = state.yankOp === YankMode.Cut ? "cut" : "copy";
-    count += `  [${op}: ${state.yankPaths.length}]`;
+    const op = state.yankOp === YankMode.Cut ? "cut" : "yank";
+    badges.push(chalk.hex(colors.media)(`${op}:${state.yankPaths.length}`));
   }
+  const badgeStr = badges.join(chalk.hex(colors.dim)(" · "));
 
-  // Breadcrumb with styled separators
+  // Breadcrumb — last 3 segments with ellipsis
   const pathParts = state.cwd.split(path.sep).filter(Boolean);
-  const sepStyle = chalk.ansi256(Number(colors.pathSep));
-  const segStyle = chalk.ansi256(Number(colors.breadcrumb));
+  const seg = chalk.hex(colors.breadcrumb);
+  const sep = chalk.hex(colors.dim)(" / ");
+  const maxParts = Math.min(pathParts.length, 4);
+  const shownParts = pathParts.slice(-maxParts);
   let breadcrumb: string;
-  if (pathParts.length > 0) {
-    breadcrumb = sepStyle("/ ") + pathParts.map((p) => segStyle(p)).join(sepStyle(" › "));
+  if (pathParts.length > maxParts) {
+    breadcrumb = chalk.hex(colors.dim)("… ") + sep + shownParts.map(p => seg(p)).join(sep);
   } else {
-    breadcrumb = segStyle("/");
+    breadcrumb = sep.trimStart() + shownParts.map(p => seg(p)).join(sep);
   }
-
-  const countStyled = chalk.ansi256(Number(colors.muted))(count);
 
   return (
     <Box width={width} height={1}>
@@ -39,7 +45,7 @@ export function TopBar({ state, width }: Props) {
       <Box flexGrow={1}>
         <Text backgroundColor={colors.surface}> </Text>
       </Box>
-      <Text backgroundColor={colors.surface}>{countStyled} </Text>
+      <Text backgroundColor={colors.surface}>{badgeStr} </Text>
     </Box>
   );
 }

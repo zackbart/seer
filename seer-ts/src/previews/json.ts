@@ -1,13 +1,13 @@
 import chalk from "chalk";
 
-// JSON color tokens (256-color)
-const jsonKey = chalk.ansi256(147);     // periwinkle
-const jsonStr = chalk.ansi256(114);     // sage green
-const jsonNum = chalk.ansi256(222);     // pale gold
-const jsonBool = chalk.ansi256(215).bold; // amber
-const jsonNull = chalk.ansi256(240).bold; // dim
-const jsonBracket = chalk.ansi256(244); // grey
-const jsonMuted = chalk.ansi256(240);   // dim
+// JSON color tokens — true color
+const jsonKey = chalk.hex("#bb9af7");     // purple — keys
+const jsonStr = chalk.hex("#9ece6a");     // green — strings
+const jsonNum = chalk.hex("#e0af68");     // gold — numbers
+const jsonBool = chalk.hex("#ff9e64").bold; // orange — booleans
+const jsonNull = chalk.hex("#565f89").bold; // dim — null
+const jsonBracket = chalk.hex("#737aa2"); // steel — brackets
+const jsonMuted = chalk.hex("#3b3f5c");   // dim — punctuation
 
 export function renderJSONPreview(text: string, truncated: boolean): string {
   let parsed: unknown;

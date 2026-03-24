@@ -20,11 +20,11 @@ export async function buildArchivePreview(filePath: string): Promise<string> {
     return `archive: ${path.basename(filePath)}\n\n(install unzip / tar / 7z to preview contents)`;
   }
 
-  const labelStyle = chalk.ansi256(Number(colors.config)).bold;
-  const mutedStyle = chalk.ansi256(Number(colors.muted));
-  const dimStyle = chalk.ansi256(Number(colors.dim));
-  const fileStyle = chalk.ansi256(Number(colors.file));
-  const dirStyle = chalk.ansi256(Number(colors.dir)).bold;
+  const labelStyle = chalk.hex(colors.config).bold;
+  const mutedStyle = chalk.hex(colors.muted);
+  const dimStyle = chalk.hex(colors.dim);
+  const fileStyle = chalk.hex(colors.file);
+  const dirStyle = chalk.hex(colors.dir).bold;
 
   const output: string[] = [];
   output.push(labelStyle(`archive: ${path.basename(filePath)}`));

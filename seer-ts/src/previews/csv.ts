@@ -41,10 +41,10 @@ export function renderCSVPreview(
     if (colW[i] > maxCellW) colW[i] = maxCellW;
   }
 
-  const headerStyle = chalk.ansi256(Number(colors.accentFg)).bold;
-  const cellStyle = chalk.ansi256(Number(colors.file));
-  const dimStyle = chalk.ansi256(Number(colors.dim));
-  const mutedStyle = chalk.ansi256(Number(colors.muted));
+  const headerStyle = chalk.hex(colors.accentFg).bold;
+  const cellStyle = chalk.hex(colors.file);
+  const dimStyle = chalk.hex(colors.dim);
+  const mutedStyle = chalk.hex(colors.muted);
 
   const lines: string[] = [];
 

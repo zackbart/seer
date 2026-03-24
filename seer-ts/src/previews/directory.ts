@@ -9,9 +9,9 @@ export async function buildDirPreview(dirPath: string): Promise<string> {
 
   const lines: string[] = [];
   const dirIcon = fileIconExt(FileCategory.Dir, "");
-  lines.push(chalk.ansi256(Number(colors.dir)).bold(`${dirIcon}${path.basename(dirPath)}/`));
-  lines.push(chalk.ansi256(Number(colors.muted))(`  ${items.length} items`));
-  lines.push(chalk.ansi256(Number(colors.dim))(`  ${"─".repeat(30)}`));
+  lines.push(chalk.hex(colors.dir).bold(`${dirIcon}${path.basename(dirPath)}/`));
+  lines.push(chalk.hex(colors.muted)(`  ${items.length} items`));
+  lines.push(chalk.hex(colors.dim)(`  ${"─".repeat(30)}`));
   lines.push("");
 
   const limit = Math.min(items.length, MAX_DIR_PREVIEW);
@@ -29,19 +29,19 @@ export async function buildDirPreview(dirPath: string): Promise<string> {
       symlinkTarget: "",
     };
     const cat = categorise(fakeEntry);
-    const color = Number(entryColor(fakeEntry));
+    const color = entryColor(fakeEntry);
     const icon = fileIconExt(cat, path.extname(name));
 
     if (isDir) {
-      lines.push(chalk.ansi256(color).bold(`  ${icon}${name}/`));
+      lines.push(chalk.hex(color).bold(`  ${icon}${name}/`));
     } else {
-      lines.push(chalk.ansi256(color)(`  ${icon}${name}`));
+      lines.push(chalk.hex(color)(`  ${icon}${name}`));
     }
   }
 
   if (items.length > limit) {
     lines.push("");
-    lines.push(chalk.ansi256(Number(colors.muted))(`  … and ${items.length - limit} more`));
+    lines.push(chalk.hex(colors.muted)(`  … and ${items.length - limit} more`));
   }
 
   return lines.join("\n");

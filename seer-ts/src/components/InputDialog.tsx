@@ -9,19 +9,15 @@ interface Props {
 }
 
 export function InputDialog({ state, width, height }: Props) {
-  const dialogWidth = Math.min(72, Math.max(42, width - 8));
+  const dialogWidth = Math.min(60, Math.max(36, width - 12));
   const title = inputModeTitle[state.inputMode];
-
   const topPad = Math.max(0, Math.floor((height - 7) / 2));
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      {/* Top padding */}
       {Array.from({ length: topPad }).map((_, i) => (
-        <Box key={`pad-${i}`} height={1} />
+        <Box key={`p${i}`} height={1} />
       ))}
-
-      {/* Center the dialog */}
       <Box justifyContent="center" width={width}>
         <Box
           flexDirection="column"
@@ -34,12 +30,12 @@ export function InputDialog({ state, width, height }: Props) {
           <Text color={colors.accent} bold>{title}</Text>
           <Text> </Text>
           <Box>
-            <Text color={colors.muted}>&gt; </Text>
-            <Text color={colors.accentFg}>{state.inputValue}</Text>
-            <Text color={colors.accent}>█</Text>
+            <Text color={colors.dim}>❯ </Text>
+            <Text color={colors.accentFg} bold>{state.inputValue}</Text>
+            <Text color={colors.accent}>▎</Text>
           </Box>
           <Text> </Text>
-          <Text color={colors.hintText}>Enter to confirm  ·  Esc to cancel</Text>
+          <Text color={colors.hintText} dimColor>↵ confirm  ·  esc cancel</Text>
         </Box>
       </Box>
     </Box>

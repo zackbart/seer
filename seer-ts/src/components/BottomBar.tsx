@@ -14,76 +14,73 @@ interface Hint {
 }
 
 export function BottomBar({ state, width }: Props) {
-  // Status line — build as styled string
+  // ── status line ────────────────────────────────────────────────────
   let statusText: string;
 
   if (state.searching) {
-    const accent = chalk.ansi256(Number(colors.accent)).bold;
-    const query = chalk.white(state.searchQuery);
-    const cursor = chalk.ansi256(Number(colors.accent))("▌");
-    const mode = chalk.ansi256(Number(colors.dim))("  fuzzy");
-    statusText = `${accent("/ ")}${query}${cursor}${mode}`;
+    statusText = [
+      chalk.hex(colors.accent).bold("/"),
+      chalk.hex(colors.accentFg)(state.searchQuery),
+      chalk.hex(colors.accent)("▎"),
+      chalk.hex(colors.dim)(" fuzzy"),
+    ].join("");
   } else if (state.inputMode !== InputMode.None) {
     const title = state.inputMode === InputMode.Rename ? "Rename"
       : state.inputMode === InputMode.NewFile ? "New File" : "New Directory";
-    statusText = chalk.ansi256(Number(colors.accent)).bold(title);
+    statusText = chalk.hex(colors.accent).bold(`${title}`);
   } else {
-    const icon = state.status === "ready" ? "◆" : "●";
-    const iconColor = state.status === "ready" ? Number(colors.exec) : Number(colors.status);
-    statusText = chalk.ansi256(iconColor)(`${icon} ${state.status}`);
+    const isReady = state.status === "ready";
+    const dot = isReady
+      ? chalk.hex(colors.success)("●")
+      : chalk.hex(colors.accent)("●");
+    statusText = `${dot} ${chalk.hex(colors.status)(state.status)}`;
   }
 
-  // Key hints
+  // ── key hints ──────────────────────────────────────────────────────
   let hints: Hint[];
   if (state.searching) {
     hints = [
       { key: "esc", desc: "cancel" },
-      { key: "backspace", desc: "delete" },
-      { key: "enter/l", desc: "open" },
+      { key: "⌫", desc: "delete" },
+      { key: "↵", desc: "open" },
     ];
   } else if (state.inputMode !== InputMode.None) {
     hints = [
-      { key: "enter", desc: "confirm" },
+      { key: "↵", desc: "confirm" },
       { key: "esc", desc: "cancel" },
-      { key: "backspace", desc: "delete char" },
     ];
   } else {
     hints = [
-      { key: "j/k", desc: "move" },
-      { key: "enter/l", desc: "open" },
-      { key: "h", desc: "up" },
+      { key: "j/k", desc: "nav" },
+      { key: "↵", desc: "open" },
+      { key: "h", desc: "back" },
+      { key: "/", desc: "find" },
       { key: "r", desc: "rename" },
-      { key: "n/N", desc: "new" },
+      { key: "n", desc: "new" },
       { key: "e", desc: "edit" },
-      { key: "y/x", desc: "yank/cut" },
+      { key: "y/x", desc: "yank" },
       { key: "P", desc: "paste" },
-      { key: "space", desc: "sel" },
+      { key: "⌫", desc: "trash" },
       { key: "s", desc: "sort" },
-      { key: "b", desc: "bkm" },
-      { key: "/", desc: "search" },
       { key: ".", desc: "hidden" },
       { key: "q", desc: "quit" },
     ];
   }
 
-  const keyStyle = chalk.ansi256(Number(colors.hintKey)).bold;
-  const descStyle = chalk.ansi256(Number(colors.hintText));
-  const sepStyle = chalk.ansi256(Number(colors.dim));
+  // Build hint string with budget checking
+  const key = chalk.hex(colors.hintKey).bold;
+  const desc = chalk.hex(colors.hintText);
+  const sep = chalk.hex(colors.dim)(" │ ");
 
-  // Build hint string, budget-checked against width
   const parts: string[] = [];
-  let used = 2; // padding
+  let used = 2;
   for (let i = 0; i < hints.length; i++) {
     const h = hints[i];
-    const seg = `${keyStyle(h.key)}${descStyle(` ${h.desc}`)}`;
     const segLen = h.key.length + 1 + h.desc.length;
-    const sepLen = i > 0 ? 3 : 0; // " · "
-    if (used + sepLen + segLen > width) break;
-    if (i > 0) {
-      parts.push(sepStyle(" · "));
-      used += 3;
-    }
-    parts.push(seg);
+    const sepLen = i > 0 ? 3 : 0;
+    if (used + sepLen + segLen > width - 1) break;
+    if (i > 0) { parts.push(sep); used += 3; }
+    parts.push(`${key(h.key)} ${desc(h.desc)}`);
     used += segLen;
   }
   const hintsText = parts.join("");

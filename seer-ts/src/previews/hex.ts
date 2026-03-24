@@ -3,12 +3,12 @@ import { colors } from "../theme.js";
 import { humanSize } from "../utils/humanSize.js";
 
 export function buildHexPreview(data: Buffer, name: string, size: number, modTime: Date): string {
-  const addrStyle = chalk.ansi256(110);
-  const hexStyle = chalk.ansi256(189);
-  const asciiStyle = chalk.ansi256(245);
-  const dimStyle = chalk.ansi256(240);
-  const mutedStyle = chalk.ansi256(Number(colors.muted));
-  const labelStyle = chalk.ansi256(Number(colors.binary)).bold;
+  const addrStyle = chalk.hex("#7aa2f7");
+  const hexStyle = chalk.hex("#a9b1d6");
+  const asciiStyle = chalk.hex("#737aa2");
+  const dimStyle = chalk.hex(colors.dim);
+  const mutedStyle = chalk.hex(colors.muted);
+  const labelStyle = chalk.hex(colors.binary).bold;
 
   const lines: string[] = [];
 

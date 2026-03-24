@@ -10,31 +10,23 @@ interface Props {
 }
 
 export function DeleteDialog({ state, width, height }: Props) {
-  const dialogWidth = Math.min(72, Math.max(42, width - 8));
-
+  const dialogWidth = Math.min(56, Math.max(36, width - 12));
   const targets = state.multiSelected.size > 0
     ? [...state.multiSelected]
     : state.deleteTarget ? [state.deleteTarget] : [];
 
-  let fileName: string;
-  let meta: string;
-
-  if (targets.length === 1) {
-    fileName = path.basename(targets[0]);
-    meta = "file";
-  } else {
-    fileName = `${targets.length} items`;
-    meta = "multiple files / folders";
-  }
+  const fileName = targets.length === 1
+    ? path.basename(targets[0])
+    : `${targets.length} items`;
+  const meta = targets.length === 1 ? "file" : "multiple files / folders";
 
   const topPad = Math.max(0, Math.floor((height - 10) / 2));
 
   return (
     <Box flexDirection="column" width={width} height={height}>
       {Array.from({ length: topPad }).map((_, i) => (
-        <Box key={`pad-${i}`} height={1} />
+        <Box key={`p${i}`} height={1} />
       ))}
-
       <Box justifyContent="center" width={width}>
         <Box
           flexDirection="column"
@@ -49,12 +41,10 @@ export function DeleteDialog({ state, width, height }: Props) {
           <Text color={colors.accentFg} bold>{fileName}</Text>
           <Text color={colors.muted}>{meta}</Text>
           <Text> </Text>
-          <Text color={colors.hintText}>Enter or y confirms. Esc or n cancels.</Text>
-          <Text> </Text>
           <Box>
-            <Text color={colors.accentFg} backgroundColor={colors.danger} bold> enter / y  move </Text>
+            <Text color={colors.accentFg} backgroundColor={colors.danger} bold> y  trash </Text>
             <Text>  </Text>
-            <Text color={colors.hintText}> esc / n  cancel </Text>
+            <Text color={colors.hintText} dimColor> n  cancel </Text>
           </Box>
         </Box>
       </Box>
