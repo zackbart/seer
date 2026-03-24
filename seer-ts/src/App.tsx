@@ -66,7 +66,8 @@ export function layoutDimensions(width: number, height: number, paneOffset: numb
     rightW = 20;
     leftW = width - rightW - 1;
   }
-  const bodyH = Math.max(4, height - 4);
+  // TopBar=1 row + BottomBar=2 rows = 3 rows of chrome
+  const bodyH = Math.max(4, height - 3);
   return { leftW, rightW, bodyH };
 }
 

@@ -5,6 +5,6 @@ declare module "marked-terminal" {
     showSectionPrefix?: boolean;
     tab?: number;
   }
-  function markedTerminal(options?: Options): any;
+  export function markedTerminal(options?: Options): any;
   export default markedTerminal;
 }

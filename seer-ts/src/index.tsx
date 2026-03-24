@@ -78,14 +78,26 @@ for (const arg of process.argv.slice(2)) {
 // Resolve start directory
 const resolvedDir = startDir ? path.resolve(startDir) : process.cwd();
 
+// Enter alt-screen (same as Go's tea.WithAltScreen)
+process.stdout.write("\x1b[?1049h"); // enter alt screen
+process.stdout.write("\x1b[?25l");   // hide cursor
+
+// Clean up on exit
+function cleanup() {
+  process.stdout.write("\x1b[?25h");   // show cursor
+  process.stdout.write("\x1b[?1049l"); // leave alt screen
+}
+process.on("exit", cleanup);
+process.on("SIGINT", () => { cleanup(); process.exit(0); });
+process.on("SIGTERM", () => { cleanup(); process.exit(0); });
+
 // Render the app
 const { waitUntilExit } = render(
   <App startDir={resolvedDir} cwdFile={cwdFile} />,
   {
     exitOnCtrlC: false,
-    // Full-screen mode uses alt-screen and redraws entirely each frame,
-    // preventing the incremental-patch flicker that causes layout jumps.
   },
 );
 
 await waitUntilExit();
+cleanup();
