@@ -1,3 +1,4 @@
+import React from "react";
 import { Box, Text } from "ink";
 import path from "path";
 import { AppState, SortMode, YankMode, sortModeLabel } from "../types.js";
@@ -19,17 +20,29 @@ export function TopBar({ state, width }: Props) {
     count += `  [${op}: ${state.yankPaths.length}]`;
   }
 
-  // Breadcrumb path
-  const parts = state.cwd.split(path.sep).filter(Boolean);
-  const breadcrumb = parts.length > 0 ? "/ " + parts.join(" › ") : "/";
+  // Style individual breadcrumb segments with dimmed separators
+  const pathParts = state.cwd.split(path.sep).filter(Boolean);
+  const breadcrumbElements: React.ReactNode[] = [];
+  if (pathParts.length > 0) {
+    breadcrumbElements.push(<Text key="root" color={colors.pathSep}>/ </Text>);
+    pathParts.forEach((p, i) => {
+      if (i > 0) {
+        breadcrumbElements.push(<Text key={`sep-${i}`} color={colors.pathSep}> › </Text>);
+      }
+      breadcrumbElements.push(<Text key={`seg-${i}`} color={colors.breadcrumb}>{p}</Text>);
+    });
+  } else {
+    breadcrumbElements.push(<Text key="root" color={colors.breadcrumb}>/</Text>);
+  }
 
   return (
     <Box width={width} height={1}>
+      <Text backgroundColor={colors.surface}> </Text>
       <Box flexGrow={1}>
-        <Text color={colors.breadcrumb}>{breadcrumb}</Text>
+        <Text backgroundColor={colors.surface}>{breadcrumbElements}</Text>
       </Box>
       <Box>
-        <Text color={colors.muted}>{count}</Text>
+        <Text color={colors.muted} backgroundColor={colors.surface}> {count} </Text>
       </Box>
     </Box>
   );

@@ -1,5 +1,5 @@
 import { useReducer, useEffect, useRef, useCallback } from "react";
-import { Box, useApp, useStdout } from "ink";
+import { Box, Text, useApp, useStdout } from "ink";
 import path from "path";
 import fsp from "fs/promises";
 
@@ -7,6 +7,7 @@ import {
   AppState, Entry, InputMode, YankMode, SortMode,
   SORT_MODE_COUNT, sortModeLabel,
 } from "./types.js";
+import { colors } from "./theme.js";
 import {
   listDir, applySort, moveToTrash, pasteEntries,
   loadGitStatus, previewKey, fuzzyMatch,
@@ -794,7 +795,11 @@ export function App({ startDir, cwdFile }: AppProps) {
       <TopBar state={state} width={state.width} />
       <Box flexDirection="row" height={bodyH}>
         <FileList state={state} width={leftW} height={bodyH} />
-        <Box width={1} flexDirection="column" />
+        <Box width={1} flexDirection="column" height={bodyH}>
+          {Array.from({ length: bodyH }).map((_, i) => (
+            <Text key={i} color={colors.border}>│</Text>
+          ))}
+        </Box>
         <Preview state={state} width={rightW} height={bodyH} />
       </Box>
       <BottomBar state={state} width={state.width} />

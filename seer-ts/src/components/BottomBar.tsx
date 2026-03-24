@@ -76,16 +76,24 @@ export function BottomBar({ state, width }: Props) {
   return (
     <Box flexDirection="column" width={width}>
       <Box width={width} height={1}>
-        {statusContent}
+        <Text backgroundColor={colors.surface}> </Text>
+        <Box flexGrow={1}>
+          <Text backgroundColor={colors.surface}>{statusContent}</Text>
+        </Box>
+        <Text backgroundColor={colors.surface}> </Text>
       </Box>
       <Box width={width} height={1}>
+        <Text backgroundColor={colors.surface}> </Text>
         {hints.map((h, i) => (
           <React.Fragment key={h.key}>
-            {i > 0 && <Text color={colors.dim}>  ·  </Text>}
-            <Text color={colors.hintKey} bold>{h.key}</Text>
-            <Text color={colors.hintText}> {h.desc}</Text>
+            {i > 0 && <Text color={colors.dim} backgroundColor={colors.surface}> · </Text>}
+            <Text color={colors.hintKey} bold backgroundColor={colors.surface}>{h.key}</Text>
+            <Text color={colors.hintText} backgroundColor={colors.surface}> {h.desc}</Text>
           </React.Fragment>
         ))}
+        <Box flexGrow={1}>
+          <Text backgroundColor={colors.surface}> </Text>
+        </Box>
       </Box>
     </Box>
   );

@@ -64,12 +64,20 @@ export function Preview({ state, width, height }: Props) {
     : colors.muted;
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      {/* Header */}
-      <Box width={width}>
-        <Text color={headerColor} bold>{headerLeft}</Text>
-        <Box flexGrow={1} />
-        <Text color={colors.muted}>{headerRight}</Text>
+    <Box
+      flexDirection="column"
+      width={width}
+      height={height}
+      borderStyle="round"
+      borderColor={colors.borderStrong}
+    >
+      {/* Header — with background fill */}
+      <Box>
+        <Text color={headerColor} bold backgroundColor={colors.surfaceAlt}> {headerLeft}</Text>
+        <Box flexGrow={1}>
+          <Text backgroundColor={colors.surfaceAlt}> </Text>
+        </Box>
+        <Text color={colors.muted} backgroundColor={colors.surfaceAlt}>{headerRight} </Text>
       </Box>
 
       {/* Divider */}

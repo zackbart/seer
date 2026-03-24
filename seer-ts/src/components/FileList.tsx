@@ -32,15 +32,18 @@ export function FileList({ state, width, height }: Props) {
   // Header
   const lines: React.ReactNode[] = [];
 
-  // Title row
+  // Title row — with background fill like Go version
+  const innerW = Math.max(8, width - 2); // account for border
   lines.push(
-    <Box key="title" width={width}>
-      <Text bold color={colors.title}>Explorer</Text>
+    <Box key="title" width={innerW}>
+      <Text bold color={colors.title} backgroundColor={colors.surfaceAlt}>Explorer</Text>
       {state.multiSelected.size > 0 && (
-        <Text color={colors.muted}> · {state.multiSelected.size} sel</Text>
+        <Text color={colors.muted} backgroundColor={colors.surfaceAlt}> · {state.multiSelected.size} sel</Text>
       )}
-      <Box flexGrow={1} />
-      <Text color={colors.muted}>{state.entries.length}</Text>
+      <Box flexGrow={1}>
+        <Text backgroundColor={colors.surfaceAlt}> </Text>
+      </Box>
+      <Text color={colors.muted} backgroundColor={colors.surfaceAlt}>{state.entries.length} </Text>
     </Box>,
   );
 
@@ -157,7 +160,13 @@ export function FileList({ state, width, height }: Props) {
   }
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
+    <Box
+      flexDirection="column"
+      width={width}
+      height={height}
+      borderStyle="round"
+      borderColor={colors.border}
+    >
       {lines}
     </Box>
   );
