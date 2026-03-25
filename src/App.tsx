@@ -58,7 +58,7 @@ function reducer(state: AppState, action: Action): AppState {
 // ── layout ───────────────────────────────────────────────────────────────────
 
 export function layoutDimensions(width: number, height: number, paneOffset: number) {
-  const base = Math.max(26, Math.floor(width / 3));
+  const base = Math.max(26, Math.floor(width / 4));
   let leftW = Math.max(16, Math.min(Math.floor(width / 2), base + paneOffset));
   let rightW = width - leftW - 1;
   if (rightW < 20) {
