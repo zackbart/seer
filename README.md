@@ -4,6 +4,10 @@ A fast, minimal TUI file browser with live previews — inspired by [Yazi](https
 
 Two panes: directory listing on the left, instant file preview on the right. That's it.
 
+![seer with Catppuccin theme](assets/screenshot-catppuccin.png)
+
+![seer with Gruvbox theme](assets/screenshot-gruvbox.png)
+
 ## Features
 
 - Two-pane layout with live file preview
