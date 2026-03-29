@@ -146,8 +146,14 @@ export function App({ startDir, cwdFile }: AppProps) {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
+  const gitProcRef = useRef<ReturnType<typeof Bun.spawn> | null>(null);
   const loadGit = useCallback(async (cwd: string) => {
-    const status = await loadGitStatus(cwd);
+    // Kill any in-flight git process before spawning a new one
+    if (gitProcRef.current) {
+      gitProcRef.current.kill();
+      gitProcRef.current = null;
+    }
+    const status = await loadGitStatus(cwd, gitProcRef);
     dispatch({ type: "SET_GIT_STATUS", cwd, status });
   }, []);
 

@@ -31,6 +31,10 @@ export function useMouse(handler: MouseHandler): void {
   useEffect(() => {
     if (!stdin) return;
 
+    // Throttle drag events to avoid per-frame re-renders (~16ms = 60fps cap)
+    let lastDragTime = 0;
+    const DRAG_THROTTLE_MS = 32; // ~30fps is plenty for text selection
+
     const onData = (data: Buffer) => {
       const str = data.toString();
 
@@ -45,7 +49,10 @@ export function useMouse(handler: MouseHandler): void {
         if (isRelease) {
           handlerRef.current({ action: "release", button: btn & ~0x20, x, y });
         } else if (btn & 0x20) {
-          // Motion with button held (bit 5 set = drag)
+          // Motion with button held (bit 5 set = drag) — throttled
+          const now = Date.now();
+          if (now - lastDragTime < DRAG_THROTTLE_MS) return;
+          lastDragTime = now;
           handlerRef.current({ action: "drag", button: btn & ~0x20, x, y });
         } else {
           handlerRef.current({ action: "press", button: btn, x, y });

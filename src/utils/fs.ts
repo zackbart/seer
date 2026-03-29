@@ -124,14 +124,19 @@ export async function moveToTrash(filePath: string): Promise<void> {
 
 // ── git status ───────────────────────────────────────────────────────────────
 
-export async function loadGitStatus(cwd: string): Promise<Map<string, string> | null> {
+export async function loadGitStatus(
+  cwd: string,
+  procRef?: { current: ReturnType<typeof Bun.spawn> | null },
+): Promise<Map<string, string> | null> {
   try {
     const proc = Bun.spawn(["git", "-C", cwd, "status", "--porcelain"], {
       stdout: "pipe",
       stderr: "ignore",
     });
+    if (procRef) procRef.current = proc;
     const text = await new Response(proc.stdout).text();
     const exitCode = await proc.exited;
+    if (procRef) procRef.current = null;
     if (exitCode !== 0) return null;
 
     const status = new Map<string, string>();
