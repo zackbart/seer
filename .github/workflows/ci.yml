@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Build (Linux x64)
+        run: bun build --compile --target=bun-linux-x64 src/index.tsx --outfile seer
+
+      - name: Smoke test
+        run: ./seer --version && ./seer --help
