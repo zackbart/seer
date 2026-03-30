@@ -20,7 +20,7 @@ Two panes: directory listing on the left, instant file preview on the right. Tha
 - Archive content listing (zip, tar, gz, etc.)
 - Fast fuzzy search (`/` to filter)
 - Mouse support - scroll targets the pane under cursor, click-drag in preview to copy text
-- 7 built-in color themes (5 dark, 2 light) with persistence
+- 9 built-in color themes (7 dark, 2 light) with persistence
 - Nerd Font icons (with plain Unicode fallback)
 - Git status badges
 - Async preview pipeline with LRU cache

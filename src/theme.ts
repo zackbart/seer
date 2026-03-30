@@ -242,6 +242,82 @@ const nord: ThemePalette = {
   success: "#a3be8c",
 };
 
+const dracula: ThemePalette = {
+  name: "Dracula",
+  bg: "#282a36",
+  surface: "#21222c",
+  surfaceAlt: "#343746",
+  surfaceElevated: "#44475a",
+  surfaceHover: "#515468",
+  accent: "#bd93f9",
+  accentDim: "#9580d1",
+  accentFg: "#f8f8f2",
+  dir: "#bd93f9",
+  dirHidden: "#6272a4",
+  file: "#f8f8f2",
+  fileHidden: "#6272a4",
+  exec: "#50fa7b",
+  media: "#f1fa8c",
+  doc: "#ff79c6",
+  config: "#ffb86c",
+  binary: "#ff5555",
+  symlink: "#8be9fd",
+  size: "#6272a4",
+  muted: "#6272a4",
+  dim: "#44475a",
+  breadcrumb: "#f8f8f2",
+  pathSep: "#6272a4",
+  hintKey: "#8be9fd",
+  hintText: "#6272a4",
+  status: "#f8f8f2",
+  border: "#44475a",
+  borderStrong: "#bd93f9",
+  title: "#f8f8f2",
+  loading: "#f1fa8c",
+  scrollbar: "#bd93f9",
+  danger: "#ff5555",
+  dangerSoft: "#3b2030",
+  success: "#50fa7b",
+};
+
+const oneDark: ThemePalette = {
+  name: "One Dark",
+  bg: "#282c34",
+  surface: "#21252b",
+  surfaceAlt: "#2c313a",
+  surfaceElevated: "#393f4a",
+  surfaceHover: "#464d5b",
+  accent: "#61afef",
+  accentDim: "#4d8ac7",
+  accentFg: "#abb2bf",
+  dir: "#61afef",
+  dirHidden: "#5c6370",
+  file: "#abb2bf",
+  fileHidden: "#5c6370",
+  exec: "#98c379",
+  media: "#e5c07b",
+  doc: "#c678dd",
+  config: "#d19a66",
+  binary: "#e06c75",
+  symlink: "#56b6c2",
+  size: "#5c6370",
+  muted: "#5c6370",
+  dim: "#3e4451",
+  breadcrumb: "#abb2bf",
+  pathSep: "#5c6370",
+  hintKey: "#56b6c2",
+  hintText: "#5c6370",
+  status: "#abb2bf",
+  border: "#3e4451",
+  borderStrong: "#61afef",
+  title: "#abb2bf",
+  loading: "#e5c07b",
+  scrollbar: "#61afef",
+  danger: "#e06c75",
+  dangerSoft: "#3b2028",
+  success: "#98c379",
+};
+
 const githubLight: ThemePalette = {
   name: "GitHub Light",
   bg: "#ffffff",
@@ -318,7 +394,7 @@ const solarizedLight: ThemePalette = {
   success: "#859900",
 };
 
-export const themes: ThemePalette[] = [tokyoNight, catppuccinMocha, rosePine, gruvbox, nord, githubLight, solarizedLight];
+export const themes: ThemePalette[] = [tokyoNight, catppuccinMocha, rosePine, gruvbox, nord, dracula, oneDark, githubLight, solarizedLight];
 
 // ── active theme ────────────────────────────────────────────────────────────
 
