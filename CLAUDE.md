@@ -29,7 +29,7 @@ All source code lives in `src/`, organized as:
 | `src/index.tsx` | Entry point, CLI flags, alt-screen setup |
 | `src/App.tsx` | Main component, useReducer state, key/mouse handlers, layout |
 | `src/types.ts` | Enums, `Entry`, `AppState` interface, constants |
-| `src/theme.ts` | 7 color themes, persistence, icons, file categorization |
+| `src/theme.ts` | 9 color themes, persistence, icons, file categorization |
 | `src/components/TopBar.tsx` | Breadcrumb path + badges |
 | `src/components/FileList.tsx` | Directory listing with git badges |
 | `src/components/Preview.tsx` | File preview with selection highlighting |
@@ -58,7 +58,7 @@ All source code lives in `src/`, organized as:
 - **LRU cache**: 50-entry preview cache keyed by `path|modTime|size|width|height`
 - **Layout math**: `layoutDimensions()` is the single source of truth
 - **Position-aware mouse**: Scroll targets the pane under the cursor; click-drag in preview copies text
-- **Themes**: 7 built-in themes (5 dark, 2 light), persisted to `~/.config/seer/theme`
+- **Themes**: 9 built-in themes (7 dark, 2 light), persisted to `~/.config/seer/theme`
 
 ### Keybindings
 
