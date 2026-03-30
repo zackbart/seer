@@ -1,6 +1,6 @@
 # seer
 
-A fast, minimal TUI file browser with live previews — inspired by [Yazi](https://github.com/sxyazi/yazi).
+A fast, minimal TUI file browser with live previews - inspired by [Yazi](https://github.com/sxyazi/yazi).
 
 Two panes: directory listing on the left, instant file preview on the right. That's it.
 
@@ -19,7 +19,7 @@ Two panes: directory listing on the left, instant file preview on the right. Tha
 - Directory summaries and binary hex dump
 - Archive content listing (zip, tar, gz, etc.)
 - Fast fuzzy search (`/` to filter)
-- Mouse support — scroll targets the pane under cursor, click-drag in preview to copy text
+- Mouse support - scroll targets the pane under cursor, click-drag in preview to copy text
 - 7 built-in color themes (5 dark, 2 light) with persistence
 - Nerd Font icons (with plain Unicode fallback)
 - Git status badges
