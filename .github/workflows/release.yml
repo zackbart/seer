@@ -23,6 +23,9 @@ jobs:
             target: bun-linux-x64
             artifact: seer_linux_amd64
           - os: ubuntu-latest
+            target: bun-linux-x64-baseline
+            artifact: seer_linux_amd64_baseline
+          - os: ubuntu-latest
             target: bun-linux-arm64
             artifact: seer_linux_arm64
     runs-on: ${{ matrix.os }}
@@ -43,6 +46,10 @@ jobs:
 
       - name: Build binary
         run: bun build --compile --target=${{ matrix.target }} src/index.tsx --outfile seer
+
+      - name: Smoke test (Linux only)
+        if: runner.os == 'Linux'
+        run: ./seer --version && ./seer --help
 
       - name: Package tarball
         run: |
