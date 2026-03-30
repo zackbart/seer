@@ -47,8 +47,8 @@ jobs:
       - name: Build binary
         run: bun build --compile --target=${{ matrix.target }} src/index.tsx --outfile seer
 
-      - name: Smoke test (Linux only)
-        if: runner.os == 'Linux'
+      - name: Smoke test (native Linux builds only)
+        if: runner.os == 'Linux' && !contains(matrix.target, 'arm64')
         run: ./seer --version && ./seer --help
 
       - name: Package tarball
