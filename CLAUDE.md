@@ -89,10 +89,6 @@ All source code lives in `src/`, organized as:
 |---|---|
 | `SEER_NO_NERD_FONT=1` | Use plain Unicode instead of Nerd Font glyphs |
 
-## Archive
-
-The original Go implementation is preserved in `archive/go-v0/`.
-
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
