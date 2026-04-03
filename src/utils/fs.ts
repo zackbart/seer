@@ -58,14 +58,14 @@ export async function listDir(dirPath: string, showHidden: boolean): Promise<Ent
 // ── sorting ──────────────────────────────────────────────────────────────────
 
 export function applySort(entries: Entry[], mode: SortMode): Entry[] {
-  if (mode === SortMode.NameAsc) return entries;
-
   const result = [...entries];
   result.sort((a, b) => {
     // Dirs always first
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
 
     switch (mode) {
+      case SortMode.NameAsc:
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
       case SortMode.NameDesc:
         return b.name.toLowerCase().localeCompare(a.name.toLowerCase());
       case SortMode.SizeDesc:
@@ -151,10 +151,20 @@ export async function loadGitStatus(
       file = file.replace(/^"|"$/g, "");
 
       const dir = path.dirname(file);
-      if (dir !== "." && dir !== "") continue;
-
-      const base = path.basename(file);
-      if (xy && base) status.set(base, xy);
+      if (dir === "." || dir === "") {
+        // Top-level file
+        const base = path.basename(file);
+        if (xy && base) status.set(base, xy);
+      } else {
+        // Nested file — bubble status up to the top-level directory
+        const topDir = file.split(path.sep)[0];
+        if (xy && topDir) {
+          const existing = status.get(topDir) ?? "";
+          if (!existing.includes(xy)) {
+            status.set(topDir, existing + xy);
+          }
+        }
+      }
     }
     return status;
   } catch {

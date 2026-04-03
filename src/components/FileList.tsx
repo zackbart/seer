@@ -24,10 +24,38 @@ function visibleWindow(selected: number, total: number, height: number): [number
   return [start, end];
 }
 
+// ── git badge helpers ─────────────────────────────────────────────────────────
+
+interface GitInfo {
+  code: string;
+  color: string;
+  bold: boolean;
+}
+
+function getGitInfo(name: string, gitStatus: Map<string, string> | null): GitInfo | null {
+  if (!gitStatus) return null;
+  const code = gitStatus.get(name) ?? "";
+  if (code.includes("M")) return { code: "M", color: "#e0af68", bold: true };
+  if (code.includes("A")) return { code: "A", color: "#9ece6a", bold: true };
+  if (code.includes("D")) return { code: "D", color: "#f7768e", bold: true };
+  if (code.includes("R")) return { code: "R", color: "#7aa2f7", bold: true };
+  if (code.includes("?")) return { code: "?", color: colors.muted, bold: false };
+  return null;
+}
+
+// ── component ─────────────────────────────────────────────────────────────────
+
 export function FileList({ state, width, height }: Props) {
-  const innerH = Math.max(3, height - 2); // border takes 2
+  const innerH = Math.max(3, height - 2); // border takes 2 rows
+  const innerW = Math.max(10, width - 2); // border takes 2 cols
   const sizeW = 8;
   const hasGit = state.gitStatus !== null;
+  const iconW = 2; // all icons render as 2 display columns
+
+  // Layout budget per row (inside border):
+  //   prefix(2) + icon(2) + name(variable) + git(3 if repo) + size(8) + rightPad(1)
+  const fixedChars = 2 + iconW + (hasGit ? 3 : 0) + sizeW + 1;
+  const maxNameLen = Math.max(1, innerW - fixedChars);
 
   // We render exactly `innerH` row slots, always. Each slot has a stable key.
   // This prevents React from churning the DOM tree.
@@ -47,7 +75,7 @@ export function FileList({ state, width, height }: Props) {
   // Row 1: divider
   rows.push(
     <Box key={`slot-${slot++}`}>
-      <Text color={colors.dim}>{"─".repeat(Math.max(1, width - 2))}</Text>
+      <Text color={colors.dim}>{"─".repeat(Math.max(1, innerW))}</Text>
     </Box>,
   );
 
@@ -96,43 +124,49 @@ export function FileList({ state, width, height }: Props) {
       if (e.isDir) displayName += "/";
       if (e.isSymlink && !e.isDir) displayName += " →";
 
-      const sizeStr = e.isDir ? "" : humanSize(e.size);
-
-      // Git badge
-      let gitBadge: React.ReactNode = null;
-      if (hasGit && state.gitStatus) {
-        const code = state.gitStatus.get(e.name) ?? "";
-        if (code.includes("M")) gitBadge = <Text color="#e0af68" bold> M</Text>;
-        else if (code.includes("A")) gitBadge = <Text color="#9ece6a" bold> A</Text>;
-        else if (code.includes("D")) gitBadge = <Text color="#f7768e" bold> D</Text>;
-        else if (code.includes("R")) gitBadge = <Text color="#7aa2f7" bold> R</Text>;
-        else if (code.includes("?")) gitBadge = <Text color={colors.muted}> ?</Text>;
+      // Truncate name to fit
+      let truncName = displayName;
+      if (truncName.length > maxNameLen) {
+        truncName = truncName.slice(0, maxNameLen - 1) + "…";
       }
 
+      const sizeStr = e.isDir ? "" : humanSize(e.size);
+      const git = getGitInfo(e.name, state.gitStatus);
+
+      // Right-side content: git badge + size + padding
+      const rightLen = (hasGit && git ? 2 : (hasGit ? 2 : 0)) + sizeW + 1;
+      // Left-side content: prefix(2) + icon(iconW) + name
+      const nameLen = truncName.length;
+      // Fill gap between name and right side
+      const fillLen = Math.max(0, innerW - 2 - iconW - nameLen - rightLen);
+
       if (isSel) {
+        // Selected: single Text wrapper ensures continuous background
         rows.push(
           <Box key={`slot-${slot++}`}>
             <Text color={colors.accent}>┃</Text>
-            <Text color={colors.accentFg} bold backgroundColor={colors.surfaceElevated}>
-              {" "}{icon}{displayName}
-            </Text>
-            <Box flexGrow={1}>
-              <Text backgroundColor={colors.surfaceElevated}> </Text>
-            </Box>
-            {gitBadge ? <Text backgroundColor={colors.surfaceElevated}>{gitBadge}</Text> : null}
-            <Text color={colors.muted} backgroundColor={colors.surfaceElevated}>
-              {sizeStr.padStart(sizeW)}{" "}
+            <Text backgroundColor={colors.surfaceElevated}>
+              <Text color={colors.accentFg} bold>
+                {" "}{icon}{truncName}
+              </Text>
+              {" ".repeat(fillLen)}
+              {hasGit && git ? <Text color={git.color} bold={git.bold}> {git.code}</Text> : (hasGit ? "  " : "")}
+              <Text color={colors.muted}>
+                {sizeStr.padStart(sizeW)}{" "}
+              </Text>
             </Text>
           </Box>,
         );
       } else {
         rows.push(
           <Box key={`slot-${slot++}`}>
-            <Text> </Text>
-            <Text color={clr} bold={bold}>{icon}{displayName}</Text>
-            <Box flexGrow={1} />
-            {gitBadge}
-            <Text color={colors.dim}>{sizeStr.padStart(sizeW)}</Text>
+            <Text>
+              <Text color={colors.dim}> </Text>
+              <Text color={clr} bold={bold}>{" "}{icon}{truncName}</Text>
+              {" ".repeat(fillLen)}
+              {hasGit && git ? <Text color={git.color} bold={git.bold}> {git.code}</Text> : (hasGit ? "  " : "")}
+              <Text color={colors.dim}>{sizeStr.padStart(sizeW)}{" "}</Text>
+            </Text>
           </Box>,
         );
       }

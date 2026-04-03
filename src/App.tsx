@@ -418,7 +418,13 @@ export function App({ startDir, cwdFile }: AppProps) {
         const newSort = ((s.sortBy + 1) % SORT_MODE_COUNT) as SortMode;
         const sorted = applySort(s.allEntries, newSort);
         const filtered = applySearch(sorted, s.searchQuery);
-        let newSel = Math.min(s.selected, Math.max(0, filtered.length - 1));
+        // Preserve selection by name
+        const prevName = s.selected < s.entries.length ? s.entries[s.selected].name : "";
+        let newSel = 0;
+        for (let i = 0; i < filtered.length; i++) {
+          if (filtered[i].name === prevName) { newSel = i; break; }
+        }
+        if (newSel >= filtered.length) newSel = Math.max(0, filtered.length - 1);
         dispatch({
           type: "SET_STATE",
           payload: {
