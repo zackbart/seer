@@ -36,7 +36,7 @@ export function Preview({ state, width, height }: Props) {
 
     rows.push(
       <Box key={`slot-${slot++}`}>
-        <Text color={clr} bold> {icon}{e.name}{suffix}</Text>
+        <Text color={clr} bold>  {icon}{e.name}{suffix}</Text>
         {symlinkSuffix && <Text color={colors.dim}>{symlinkSuffix}</Text>}
         <Box flexGrow={1} />
         {meta}
@@ -72,11 +72,13 @@ export function Preview({ state, width, height }: Props) {
     [previewBody, innerW, bodyH, state.previewOffset],
   );
 
-  // Scroll indicator row
+  // Top scroll indicator — mirrors FileList's vocabulary ("N more" rather
+  // than a line number, which after wrapping would refer to wrapped rows,
+  // not source lines).
   if (body.scrollRow > 0) {
     rows.push(
       <Box key={`slot-${slot++}`}>
-        <Text color={colors.scrollbar}>  ↑ line {body.offset + 1}</Text>
+        <Text color={colors.scrollbar}>  ↑ {body.offset} more</Text>
       </Box>,
     );
   }
@@ -125,6 +127,17 @@ export function Preview({ state, width, height }: Props) {
         </Box>,
       );
     }
+  }
+
+  // Bottom scroll indicator — shown when there's wrapped content below the
+  // visible window. Mirrors FileList's `↓ N more` pattern.
+  if (body.scrollRowBot > 0) {
+    const hidden = Math.max(0, body.wrappedLines.length - body.offset - body.contentH);
+    rows.push(
+      <Box key={`slot-${slot++}`}>
+        <Text color={colors.scrollbar}>  ↓ {hidden} more</Text>
+      </Box>,
+    );
   }
 
   return (

@@ -276,9 +276,10 @@ export interface WrappedBody {
   wrappedLines: string[];
   maxOffset: number;
   offset: number;
-  scrollRow: number;   // 1 if a "↑ line N" indicator row is shown, else 0
-  contentH: number;    // rows available for wrapped content (bodyH - scrollRow)
-  visibleLines: string[]; // the actual content slice, not including indicator
+  scrollRow: number;      // 1 if a "↑ N more" top indicator is shown, else 0
+  scrollRowBot: number;   // 1 if a "↓ N more" bottom indicator is shown, else 0
+  contentH: number;       // rows available for wrapped content (bodyH - indicators)
+  visibleLines: string[]; // the actual content slice, not including indicators
 }
 
 export function computeWrappedBody(
@@ -290,19 +291,82 @@ export function computeWrappedBody(
   const width = Math.max(1, innerW);
   const height = Math.max(1, bodyH);
   const wrappedLines = wrapAnsiText(previewText, width);
+  const total = wrappedLines.length;
 
-  // Iterative fixed-point: with a scroll indicator, content height shrinks
-  // by 1, which can nudge maxOffset. Two passes is sufficient.
-  let scrollRow = previewOffset > 0 ? 1 : 0;
-  let contentH = Math.max(1, height - scrollRow);
-  let maxOffset = Math.max(0, wrappedLines.length - contentH);
+  // Short-circuit: everything fits, no indicators needed.
+  if (total <= height) {
+    const offset0 = 0;
+    return {
+      wrappedLines,
+      maxOffset: 0,
+      offset: offset0,
+      scrollRow: 0,
+      scrollRowBot: 0,
+      contentH: height,
+      visibleLines: wrappedLines.slice(0, height),
+    };
+  }
+
+  // Bounded fixed-point: the system has 4 coupled variables (top, bot, offset,
+  // maxOffset) and each iteration can flip at most one. Stabilizes in ≤ 4
+  // iterations for every non-pathological input.
+  let top = previewOffset > 0 ? 1 : 0;
+  let bot = 0;
+  let contentH = Math.max(1, height - top - bot);
+  let maxOffset = Math.max(0, total - contentH);
   let offset = Math.min(Math.max(0, previewOffset), maxOffset);
-  scrollRow = offset > 0 ? 1 : 0;
-  contentH = Math.max(1, height - scrollRow);
-  maxOffset = Math.max(0, wrappedLines.length - contentH);
-  offset = Math.min(offset, maxOffset);
+
+  for (let iter = 0; iter < 4; iter++) {
+    const newTop = offset > 0 ? 1 : 0;
+    const newContentHGuess = Math.max(1, height - newTop - bot);
+    const newBot = offset + newContentHGuess < total ? 1 : 0;
+    const newContentH = Math.max(1, height - newTop - newBot);
+    const newMaxOffset = Math.max(0, total - newContentH);
+    const newOffset = Math.min(Math.max(0, offset), newMaxOffset);
+
+    if (newTop === top && newBot === bot && newOffset === offset && newMaxOffset === maxOffset) {
+      top = newTop;
+      bot = newBot;
+      offset = newOffset;
+      maxOffset = newMaxOffset;
+      contentH = newContentH;
+      break;
+    }
+    top = newTop;
+    bot = newBot;
+    offset = newOffset;
+    maxOffset = newMaxOffset;
+    contentH = newContentH;
+  }
 
   const visibleLines = wrappedLines.slice(offset, offset + contentH);
 
-  return { wrappedLines, maxOffset, offset, scrollRow, contentH, visibleLines };
+  return {
+    wrappedLines,
+    maxOffset,
+    offset,
+    scrollRow: top,
+    scrollRowBot: bot,
+    contentH,
+    visibleLines,
+  };
+}
+
+// ── truncateByWidth ─────────────────────────────────────────────────────────
+//
+// Truncate a string to at most `maxCols` visual columns. Walks code points
+// (not UTF-16 units) so multi-byte characters aren't split mid-surrogate, and
+// uses `visualWidth` semantics so wide characters count as 2.
+
+export function truncateByWidth(str: string, maxCols: number): string {
+  if (maxCols <= 0) return "";
+  let col = 0;
+  let out = "";
+  for (const ch of str) {
+    const w = codePointWidth(ch.codePointAt(0) ?? 0);
+    if (col + w > maxCols) break;
+    out += ch;
+    col += w;
+  }
+  return out;
 }

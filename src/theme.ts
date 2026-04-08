@@ -477,7 +477,7 @@ const nerdIconByExt: Record<string, string> = {
   ".jsx": "\ue60c ", ".tsx": "\ue60c ", ".py": "\ue606 ",
   ".rb": "\ue21e ", ".rs": "\ue7a8 ", ".c": "\ue61e ",
   ".cpp": "\ue61d ", ".h": "\uf0fd ", ".java": "\ue204 ",
-  ".cs": "\uf031b ", ".php": "\ue60a ", ".swift": "\ue755 ",
+  ".cs": "\u{f031b} ", ".php": "\ue60a ", ".swift": "\ue755 ",
   ".kt": "\ue634 ", ".lua": "\ue620 ", ".hs": "\ue61f ",
   ".vim": "\ue62b ", ".sh": "\uf489 ", ".bash": "\uf489 ",
   ".zsh": "\uf489 ", ".fish": "\uf489 ", ".ps1": "\uf489 ",
@@ -485,7 +485,7 @@ const nerdIconByExt: Record<string, string> = {
   ".md": "\ue609 ", ".markdown": "\ue609 ", ".mdx": "\ue609 ",
   ".rst": "\uf15c ", ".txt": "\uf15c ",
   ".json": "\ue60b ", ".yaml": "\uf481 ", ".yml": "\uf481 ",
-  ".toml": "\uf481 ", ".xml": "\uf05c0 ", ".env": "\uf462 ",
+  ".toml": "\uf481 ", ".xml": "\u{f05c0} ", ".env": "\uf462 ",
   ".ini": "\uf17a ", ".conf": "\uf17a ",
   ".png": "\uf1c5 ", ".jpg": "\uf1c5 ", ".jpeg": "\uf1c5 ",
   ".gif": "\uf1c5 ", ".webp": "\uf1c5 ", ".svg": "\uf1c5 ",
@@ -502,10 +502,12 @@ const nerdIconByCategory: Partial<Record<FileCategory, string>> = {
   [FileCategory.Binary]: "\uf471 ",
 };
 
+// Plain-mode icons: each entry MUST be exactly 2 visual columns (glyph + space
+// or two narrow glyphs) so rows align in SEER_NO_NERD_FONT=1 mode.
 const plainIcon: Partial<Record<FileCategory, string>> = {
   [FileCategory.Dir]: "▸ ", [FileCategory.Image]: "⬡ ",
-  [FileCategory.Doc]: "≡ ", [FileCategory.Code]: "⟨⟩",
-  [FileCategory.Config]: "⚙ ", [FileCategory.Exec]: "⚡",
+  [FileCategory.Doc]: "≡ ", [FileCategory.Code]: "⟨ ",
+  [FileCategory.Config]: "⚙ ", [FileCategory.Exec]: "⚡ ",
   [FileCategory.Binary]: "⬟ ",
 };
 

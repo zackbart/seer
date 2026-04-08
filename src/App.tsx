@@ -73,6 +73,11 @@ export function layoutDimensions(width: number, height: number, paneOffset: numb
     rightW = 20;
     leftW = width - rightW - 1;
   }
+  // Guard against tiny terminals: the narrow-fallback branch can drive leftW
+  // or rightW negative if width is small enough that 20 cols don't fit. Clamp
+  // both to at least 1 so Ink doesn't get confused.
+  leftW = Math.max(1, leftW);
+  rightW = Math.max(1, rightW);
   // TopBar=1 row + BottomBar=2 rows = 3 rows of chrome
   const bodyH = Math.max(4, height - 3);
   return { leftW, rightW, bodyH };
@@ -186,6 +191,9 @@ export function App({ startDir, cwdFile }: AppProps) {
 
     const cached = cacheGet(key);
     if (cached !== undefined) {
+      // Cache hit — dispatch synchronously with the new payload. Because we
+      // never clear the stale preview in this branch, rapid j/k through
+      // already-visited files is flash-free.
       dispatch({
         type: "SET_STATE",
         payload: {
@@ -199,9 +207,22 @@ export function App({ startDir, cwdFile }: AppProps) {
       return;
     }
 
+    // Cache miss — clear the stale preview body and metrics now so the user
+    // sees a "loading…" state on the new file instead of the previous file's
+    // content sitting under the new filename in the header.
     requestIdRef.current++;
     const rid = requestIdRef.current;
-    dispatch({ type: "SET_STATE", payload: { loading: true, requestId: rid } });
+    dispatch({
+      type: "SET_STATE",
+      payload: {
+        preview: "",
+        previewLineCount: 0,
+        previewTokenEstimate: 0,
+        previewTruncated: false,
+        loading: true,
+        requestId: rid,
+      },
+    });
 
     try {
       const payload = await buildPreview(entry.path, width, height);
@@ -564,9 +585,12 @@ export function App({ startDir, cwdFile }: AppProps) {
         const innerW = Math.max(1, rightW - 2);
         const contentBodyH = Math.max(1, bodyH - 4);
         const { maxOffset } = computeWrappedBody(s.preview, innerW, contentBodyH, s.previewOffset);
+        // Scroll by 3 rows per wheel tick — single-row steps feel sluggish
+        // on long files.
+        const step = 3;
         const newOff = direction === "down"
-          ? Math.min(s.previewOffset + 1, maxOffset)
-          : Math.max(s.previewOffset - 1, 0);
+          ? Math.min(s.previewOffset + step, maxOffset)
+          : Math.max(s.previewOffset - step, 0);
         dispatch({ type: "SET_STATE", payload: { previewOffset: newOff } });
       } else {
         const delta = direction === "down" ? 1 : -1;

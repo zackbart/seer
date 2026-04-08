@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { AppState } from "../types.js";
 import { colors } from "../theme.js";
+import { visualWidth } from "../utils/ansiText.js";
 
 interface Props {
   state: AppState;
@@ -13,30 +14,81 @@ interface Hint {
   desc: string;
 }
 
+// Same flat-Text pattern as TopBar. Every Text we emit sets
+// `backgroundColor={colors.surface}` so both rows of the bar are uniformly
+// colored — no reliance on `<Box flexGrow={1}>` which doesn't paint bg.
+interface Seg {
+  text: string;
+  color?: string;
+  dimColor?: boolean;
+  bold?: boolean;
+}
+
+function segWidth(segs: Seg[]): number {
+  let w = 0;
+  for (const s of segs) w += visualWidth(s.text);
+  return w;
+}
+
+function renderSegs(segs: Seg[], keyPrefix: string): React.ReactNode[] {
+  return segs.map((s, i) => (
+    <Text
+      key={`${keyPrefix}-${i}`}
+      color={s.color}
+      dimColor={s.dimColor}
+      bold={s.bold}
+      backgroundColor={colors.surface}
+    >
+      {s.text}
+    </Text>
+  ));
+}
+
+function layoutRow(
+  leftSegs: Seg[],
+  rightSegs: Seg[],
+  width: number,
+  keyPrefix: string,
+): React.ReactNode {
+  let leftW = segWidth(leftSegs);
+  let rightW = segWidth(rightSegs);
+  let pad = width - leftW - rightW;
+
+  // Overflow — drop right segments until the row fits. Keep at least the
+  // trailing space if one exists.
+  while (pad < 0 && rightSegs.length > 0) {
+    rightSegs.pop();
+    rightW = segWidth(rightSegs);
+    pad = width - leftW - rightW;
+  }
+  if (pad < 0) pad = 0;
+
+  return (
+    <Box width={width} height={1} key={keyPrefix}>
+      {renderSegs(leftSegs, `${keyPrefix}-l`)}
+      <Text backgroundColor={colors.surface}>{" ".repeat(pad)}</Text>
+      {renderSegs(rightSegs, `${keyPrefix}-r`)}
+    </Box>
+  );
+}
+
 export function BottomBar({ state, width }: Props) {
-  // ── status line ────────────────────────────────────────────────────
-  let statusContent: React.ReactNode;
+  // ── status row ─────────────────────────────────────────────────────────
+  const statusLeft: Seg[] = [];
+  statusLeft.push({ text: " " });
 
   if (state.searching) {
-    statusContent = (
-      <>
-        <Text color={colors.accent} bold>/ </Text>
-        <Text color={colors.accentFg}>{state.searchQuery}</Text>
-        <Text color={colors.accent}>▎</Text>
-        <Text color={colors.dim}>  fuzzy</Text>
-      </>
-    );
+    statusLeft.push({ text: "/ ", color: colors.accent, bold: true });
+    statusLeft.push({ text: state.searchQuery, color: colors.accentFg });
+    statusLeft.push({ text: "▎", color: colors.accent });
+    statusLeft.push({ text: "  fuzzy", color: colors.dim });
   } else {
     const isReady = state.status === "ready";
-    statusContent = (
-      <>
-        <Text color={isReady ? colors.success : colors.accent}>● </Text>
-        <Text color={colors.status}>{state.status}</Text>
-      </>
-    );
+    statusLeft.push({ text: "● ", color: isReady ? colors.success : colors.accent });
+    statusLeft.push({ text: state.status, color: colors.status });
   }
 
-  // ── key hints ──────────────────────────────────────────────────────
+  // ── hints row ──────────────────────────────────────────────────────────
   let hints: Hint[];
   if (state.searching) {
     hints = [
@@ -59,43 +111,29 @@ export function BottomBar({ state, width }: Props) {
     ];
   }
 
-  // Budget-check hints against width
-  const hintElements: React.ReactNode[] = [];
-  let used = 2;
+  // Budget-check hints against width. Build as segments; the row layout
+  // below pads with surface bg and keeps the whole row uniformly colored.
+  const hintSegs: Seg[] = [];
+  hintSegs.push({ text: " " }); // leading pad
+  let used = 1;
   for (let i = 0; i < hints.length; i++) {
     const h = hints[i];
-    const segLen = h.key.length + 1 + h.desc.length;
+    const segLen = visualWidth(h.key) + 1 + visualWidth(h.desc);
     const sepLen = i > 0 ? 3 : 0;
     if (used + sepLen + segLen > width - 1) break;
     if (i > 0) {
-      hintElements.push(<Text key={`sep-${i}`} color={colors.dim}> │ </Text>);
+      hintSegs.push({ text: " │ ", color: colors.dim });
       used += 3;
     }
-    hintElements.push(
-      <React.Fragment key={`hint-${i}`}>
-        <Text color={colors.hintKey} bold>{h.key}</Text>
-        <Text color={colors.hintText}> {h.desc}</Text>
-      </React.Fragment>,
-    );
+    hintSegs.push({ text: h.key, color: colors.hintKey, bold: true });
+    hintSegs.push({ text: " " + h.desc, color: colors.hintText });
     used += segLen;
   }
 
   return (
     <Box flexDirection="column" width={width} height={2}>
-      <Box width={width} height={1}>
-        <Text backgroundColor={colors.surface}> </Text>
-        {statusContent}
-        <Box flexGrow={1}>
-          <Text backgroundColor={colors.surface}> </Text>
-        </Box>
-      </Box>
-      <Box width={width} height={1}>
-        <Text backgroundColor={colors.surface}> </Text>
-        {hintElements}
-        <Box flexGrow={1}>
-          <Text backgroundColor={colors.surface}> </Text>
-        </Box>
-      </Box>
+      {layoutRow(statusLeft, [], width, "status")}
+      {layoutRow(hintSegs, [], width, "hints")}
     </Box>
   );
 }

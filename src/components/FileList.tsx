@@ -4,6 +4,7 @@ import path from "path";
 import { AppState } from "../types.js";
 import { categorise, fileIconExt, entryColor, entryBold, symlinkIcon, colors } from "../theme.js";
 import { humanSize } from "../utils/humanSize.js";
+import { visualWidth, truncateByWidth } from "../utils/ansiText.js";
 
 interface Props {
   state: AppState;
@@ -50,12 +51,12 @@ export function FileList({ state, width, height }: Props) {
   const innerW = Math.max(10, width - 2); // border takes 2 cols
   const sizeW = 8;
   const hasGit = state.gitStatus !== null;
-  const iconW = 2; // all icons render as 2 display columns
 
-  // Layout budget per row (inside border):
-  //   prefix(2) + icon(2) + name(variable) + git(3 if repo) + size(8) + rightPad(1)
-  const fixedChars = 2 + iconW + (hasGit ? 3 : 0) + sizeW + 1;
-  const maxNameLen = Math.max(1, innerW - fixedChars);
+  // Note: icon width (`iconW`), name budget (`maxNameLen`), and truncation
+  // are computed *per row* inside the loop below — different icons render at
+  // different visual widths (nerd astral-plane glyphs are 2 cols but the
+  // trailing-space convention varies). Using visualWidth on the actual icon
+  // string is the only honest measurement.
 
   // We render exactly `innerH` row slots, always. Each slot has a stable key.
   // This prevents React from churning the DOM tree.
@@ -87,21 +88,25 @@ export function FileList({ state, width, height }: Props) {
     );
   } else {
     const listH = Math.max(1, innerH - 2);
+
+    // Pass 1: naive window with full listH capacity.
     let [start, end] = visibleWindow(state.selected, state.entries.length, listH);
     let needTop = start > 0;
     let needBot = end < state.entries.length;
+    let indicatorCount = (needTop ? 1 : 0) + (needBot ? 1 : 0);
 
-    for (let iter = 0; iter < 3; iter++) {
-      let capacity = listH;
-      if (needTop) capacity--;
-      if (needBot) capacity--;
-      if (capacity < 1) capacity = 1;
+    // Pass 2: if indicators would leave < 1 content row, drop them entirely
+    // (prefer showing content over indicators on tiny panes). Otherwise
+    // re-window with the reduced capacity and only keep indicators that are
+    // still justified — never add indicators back (prevents oscillation).
+    if (indicatorCount > 0 && listH - indicatorCount < 1) {
+      needTop = false;
+      needBot = false;
+    } else if (indicatorCount > 0) {
+      const capacity = listH - indicatorCount;
       [start, end] = visibleWindow(state.selected, state.entries.length, capacity);
-      const nt = start > 0;
-      const nb = end < state.entries.length;
-      if (nt === needTop && nb === needBot) break;
-      needTop = nt;
-      needBot = nb;
+      needTop = needTop && start > 0;
+      needBot = needBot && end < state.entries.length;
     }
 
     if (needTop) {
@@ -124,20 +129,25 @@ export function FileList({ state, width, height }: Props) {
       if (e.isDir) displayName += "/";
       if (e.isSymlink && !e.isDir) displayName += " →";
 
-      // Truncate name to fit
-      let truncName = displayName;
-      if (truncName.length > maxNameLen) {
-        truncName = truncName.slice(0, maxNameLen - 1) + "…";
-      }
-
+      // Per-row visual-width budgeting. Icon width varies (nerd astral glyphs
+      // vs plain ASCII vs emoji filenames) so measure on the actual strings.
+      const iconW = visualWidth(icon);
       const sizeStr = e.isDir ? "" : humanSize(e.size);
       const git = getGitInfo(e.name, state.gitStatus);
+      // Right-side content: git(2 cols when in a repo) + size(8) + trailing pad(1)
+      const rightLen = (hasGit ? 2 : 0) + sizeW + 1;
+      // Layout: prefix(2) + icon(iconW) + name + fill + rightLen = innerW
+      const maxNameLen = Math.max(1, innerW - 2 - iconW - rightLen);
 
-      // Right-side content: git badge + size + padding
-      const rightLen = (hasGit && git ? 2 : (hasGit ? 2 : 0)) + sizeW + 1;
-      // Left-side content: prefix(2) + icon(iconW) + name
-      const nameLen = truncName.length;
-      // Fill gap between name and right side
+      // Truncate name by visual width (not UTF-16 code units) so emoji and
+      // CJK characters in filenames don't split mid-surrogate.
+      let truncName = displayName;
+      if (visualWidth(truncName) > maxNameLen) {
+        truncName = truncateByWidth(truncName, Math.max(1, maxNameLen - 1)) + "…";
+      }
+      const nameLen = visualWidth(truncName);
+
+      // Fill gap between name and right side.
       const fillLen = Math.max(0, innerW - 2 - iconW - nameLen - rightLen);
 
       if (isSel) {

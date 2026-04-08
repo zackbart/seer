@@ -33,19 +33,27 @@ function printHelp() {
   console.log("  }");
   console.log();
   console.log("Keybindings:");
-  console.log("  j/k         Move up/down");
-  console.log("  l/enter     Open directory");
-  console.log("  h           Go to parent");
-  console.log("  g/G         Top/bottom");
-  console.log("  /           Fuzzy search");
-  console.log("  .           Toggle hidden files");
-  console.log("  s           Cycle sort mode");
-  console.log("  p           Copy path to clipboard");
-  console.log("  < / >       Resize panes");
-  console.log("  t           Cycle theme");
-  console.log("  R           Reload");
-  console.log("  backspace   Move to trash");
-  console.log("  q           Quit");
+  console.log("  j / k         Move selection up / down");
+  console.log("  g / G         Jump to top / bottom");
+  console.log("  l / ↵         Open directory");
+  console.log("  h             Go to parent directory");
+  console.log("  /             Fuzzy search within current directory");
+  console.log("  .             Toggle hidden files");
+  console.log("  s             Cycle sort mode (name / size / modified)");
+  console.log("  t             Cycle theme");
+  console.log("  p             Copy selected path to clipboard");
+  console.log("  < / >         Resize left / right pane");
+  console.log("  R             Reload current directory");
+  console.log("  ⌫ (backspace) Move selected file to trash");
+  console.log("  q / ctrl-c    Quit");
+  console.log();
+  console.log("Preview:");
+  console.log("  Mouse wheel   Scroll preview body (over preview pane)");
+  console.log("  Click + drag  Select text in preview body → clipboard on release");
+  console.log("  Header shows  size · lines · token estimate · modified date");
+  console.log();
+  console.log("Environment:");
+  console.log("  SEER_NO_NERD_FONT=1   Use plain Unicode instead of Nerd Font glyphs");
 }
 
 // Parse CLI args
