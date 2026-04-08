@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.6.
+Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.7.
 
 ## Tech Stack
 
@@ -11,6 +11,9 @@ Seer is a TypeScript/React TUI file browser with a two-pane layout (directory li
 - **Shiki** — syntax highlighting (nord theme)
 - **Chalk** — terminal color support
 - **Marked + marked-terminal** — Markdown rendering
+- **mammoth** — `.docx` text extraction
+- **exceljs** — `.xlsx` parsing
+- **unpdf** — PDF text extraction (pdfjs-dist wrapper, Bun-friendly)
 
 ## Build & Run
 
@@ -39,11 +42,14 @@ All source code lives in `src/`, organized as:
 | `src/previews/code.ts` | Shiki syntax highlighting |
 | `src/previews/markdown.ts` | Markdown rendering |
 | `src/previews/json.ts` | Colorized JSON |
-| `src/previews/csv.ts` | Table-formatted CSV/TSV |
+| `src/previews/csv.ts` | Table-formatted CSV/TSV (exports shared `renderRowsAsTable`) |
 | `src/previews/directory.ts` | Directory listing preview |
 | `src/previews/hex.ts` | Hex dump for binary files |
 | `src/previews/archive.ts` | Archive contents |
 | `src/previews/mermaid.ts` | ASCII mermaid diagrams |
+| `src/previews/docx.ts` | `.docx` text extraction via mammoth |
+| `src/previews/xlsx.ts` | `.xlsx` table rendering via exceljs |
+| `src/previews/pdf.ts` | PDF text extraction via unpdf |
 | `src/hooks/useMouse.ts` | Mouse event parsing (SGR protocol) |
 | `src/hooks/useKeyBindings.ts` | Keyboard input handler |
 | `src/hooks/usePreviewCache.ts` | LRU preview cache |
@@ -86,6 +92,7 @@ All source code lives in `src/`, organized as:
 - Theme colors via mutable `colors` export from `theme.ts`
 - Errors set `status` field for display
 - Preview size cap: 256KB (`MAX_PREVIEW_BYTES`), directory cap: 40 items
+- Office/PDF preview cap: 10MB (docx/xlsx/pdf require full-file reads; content capped at 20k chars or 200 rows)
 
 ## Environment Variables
 

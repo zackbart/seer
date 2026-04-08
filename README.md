@@ -17,6 +17,7 @@ Two panes: directory listing on the left, instant file preview on the right. Tha
 - Native Mermaid diagram preview (sequence, flowchart)
 - JSON pretty-printing with color
 - CSV/TSV table formatting
+- Office document previews: `.docx`, `.xlsx`, and `.pdf` (text extraction + table rendering)
 - Directory summaries and binary hex dump
 - Archive content listing (zip, tar, gz, etc.)
 - Fast fuzzy search (`/` to filter)
@@ -114,6 +115,7 @@ Press `t` to cycle through themes. Your choice is saved to `~/.config/seer/theme
 - **Code**: Go, JS/TS, Python, Rust, C/C++, Ruby, Java, and many more (via Shiki)
 - **Markup**: Markdown, MDX, RST
 - **Data**: JSON, YAML, TOML, CSV, TSV, INI, ENV
+- **Office**: Word (`.docx`), Excel (`.xlsx`), PDF — text extraction with table rendering for spreadsheets
 - **Diagrams**: Mermaid (`.mmd`)
 - **Archives**: zip, tar, gz, bz2, xz, 7z, rar
 - **Directories**: file count, item listing
