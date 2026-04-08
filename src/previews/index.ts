@@ -1,7 +1,7 @@
 import fsp from "fs/promises";
 import path from "path";
 import { MAX_PREVIEW_BYTES, PreviewPayload } from "../types.js";
-import { imageExts, archiveExts } from "../theme.js";
+import { imageExts, archiveExts, officeExts, pdfExts } from "../theme.js";
 import { isLikelyBinary } from "../utils/fs.js";
 import { humanSize } from "../utils/humanSize.js";
 import { buildDirPreview } from "./directory.js";
@@ -12,6 +12,11 @@ import { renderCSVPreview } from "./csv.js";
 import { buildHexPreview } from "./hex.js";
 import { buildArchivePreview } from "./archive.js";
 import { renderMermaid } from "./mermaid.js";
+import { renderDocxPreview } from "./docx.js";
+import { renderXlsxPreview } from "./xlsx.js";
+import { renderPdfPreview } from "./pdf.js";
+
+const MAX_OFFICE_BYTES = 10 * 1024 * 1024;
 
 // ── payload helpers ─────────────────────────────────────────────────────────
 
@@ -50,6 +55,41 @@ export async function buildPreview(
   // Archive files
   if (archiveExts.has(ext)) {
     return emptyMetrics(await buildArchivePreview(filePath));
+  }
+
+  // Office / PDF files — ZIP or binary formats that require a full-file read
+  // and a parser library. Must be intercepted before the UTF-8 read path.
+  if (officeExts.has(ext) || pdfExts.has(ext)) {
+    if (stat.size > MAX_OFFICE_BYTES) {
+      return emptyMetrics(
+        `${path.basename(filePath)}\nsize: ${humanSize(stat.size)}\n\n(file too large to preview — limit ${humanSize(MAX_OFFICE_BYTES)})`,
+      );
+    }
+    try {
+      const buffer = await fsp.readFile(filePath);
+      if (ext === ".docx") {
+        const r = await renderDocxPreview(buffer);
+        return withMetrics(r.rendered, r.extracted, r.truncated);
+      }
+      if (ext === ".xlsx") {
+        const r = await renderXlsxPreview(buffer, width);
+        return withMetrics(r.rendered, r.extracted, r.truncated);
+      }
+      if (ext === ".pdf") {
+        const r = await renderPdfPreview(buffer);
+        return withMetrics(r.rendered, r.extracted, r.truncated);
+      }
+      // Defensive fallback: officeExts/pdfExts contained an extension with
+      // no matching branch. Should be unreachable today.
+      return emptyMetrics(
+        `${path.basename(filePath)}\n\n(no preview handler registered for ${ext})`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return emptyMetrics(
+        `${path.basename(filePath)}\n\n(unable to read: ${msg})`,
+      );
+    }
   }
 
   // Read file content

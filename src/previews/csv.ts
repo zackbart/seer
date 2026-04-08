@@ -11,6 +11,20 @@ export function renderCSVPreview(
   if (rows.length === 0) {
     return truncated ? text + "\n\n... preview truncated ..." : text;
   }
+  return renderRowsAsTable(rows, width, truncated);
+}
+
+// Shared table renderer — used by CSV previews and the xlsx preview so
+// spreadsheet cells with commas/quotes/newlines don't have to round-trip
+// through CSV serialization.
+export function renderRowsAsTable(
+  rows: string[][],
+  width: number,
+  truncated: boolean,
+): string {
+  if (rows.length === 0) {
+    return truncated ? "... preview truncated ..." : "";
+  }
 
   // Cap rows
   const maxRows = 200;
@@ -20,6 +34,13 @@ export function renderCSVPreview(
     displayRows = rows.slice(0, maxRows + 1);
     showMore = true;
   }
+
+  // Sanitize cells: collapse embedded whitespace (newlines, tabs) so column
+  // alignment is preserved. Spreadsheet cells commonly contain newlines that
+  // would otherwise break the rendered table.
+  displayRows = displayRows.map((row) =>
+    row.map((cell) => (cell ?? "").replace(/\s+/g, " ").trim()),
+  );
 
   // Calculate column widths
   let cols = 0;

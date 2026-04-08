@@ -466,6 +466,11 @@ export const archiveExts = new Set([
   ".xz", ".txz", ".zst", ".7z", ".rar",
 ]);
 
+// ── office / pdf extensions ──────────────────────────────────────────────────
+
+export const officeExts = new Set([".docx", ".xlsx"]);
+export const pdfExts = new Set([".pdf"]);
+
 // ── nerd font control ────────────────────────────────────────────────────────
 
 export const nerdFonts = process.env.SEER_NO_NERD_FONT !== "1";
@@ -491,7 +496,8 @@ const nerdIconByExt: Record<string, string> = {
   ".gif": "\uf1c5 ", ".webp": "\uf1c5 ", ".svg": "\uf1c5 ",
   ".bmp": "\uf1c5 ",
   ".mmd": "\ueb43 ", ".mermaid": "\ueb43 ",
-  ".pdf": "\uf1c1 ", ".zip": "\uf410 ", ".tar": "\uf410 ",
+  ".pdf": "\uf1c1 ", ".docx": "\uf1c2 ", ".xlsx": "\uf1c3 ",
+  ".zip": "\uf410 ", ".tar": "\uf410 ",
   ".gz": "\uf410 ", ".gitignore": "\ue702 ", ".dockerignore": "\uf308 ",
 };
 
@@ -521,6 +527,7 @@ export function categorise(e: Entry): FileCategory {
     case ".gif": case ".bmp": case ".tiff":
       return FileCategory.Image;
     case ".md": case ".markdown": case ".mdx": case ".rst": case ".txt":
+    case ".pdf": case ".docx": case ".xlsx":
       return FileCategory.Doc;
     case ".sh": case ".bash": case ".zsh": case ".fish":
     case ".ps1": case ".bat": case ".cmd":
