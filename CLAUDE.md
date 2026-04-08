@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.4.
+Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.5.
 
 ## Tech Stack
 
@@ -50,14 +50,18 @@ All source code lives in `src/`, organized as:
 | `src/utils/fs.ts` | Directory listing, sorting, trash, git status |
 | `src/utils/clipboard.ts` | OS clipboard integration |
 | `src/utils/humanSize.ts` | File size formatting |
+| `src/utils/ansiText.ts` | ANSI-aware text utils: stripAnsi, visualWidth, ansiSlice, wrap, computeWrappedBody, truncateByWidth |
 
 ### Key Patterns
 
 - **useReducer**: All state in `AppState`, mutations via dispatch
 - **Async previews**: Preview generation is async; `requestId` prevents stale results
-- **LRU cache**: 50-entry preview cache keyed by `path|modTime|size|width|height`
+- **Preview payload**: `buildPreview` returns `{ text, lineCount, tokenEstimate, truncated }`; metrics computed on raw source before rendering and shown in the preview header as `size · lines · ~tokens · date` with width-aware graceful degradation
+- **ANSI-aware wrap**: All preview lines wrapped to innerW via `wrapAnsiText` with cumulative SGR state carried across breaks; `computeWrappedBody` is the single source of truth for scroll math (Preview render, mouse wheel, click-drag selection all use it)
+- **Flat-Text bars**: TopBar and BottomBar use explicit plain-string segment lists + `visualWidth` measurement + explicit `backgroundColor` on every Text, since Ink's `<Box>` does not support backgroundColor
+- **LRU cache**: 50-entry preview cache keyed by `path|modTime|size|width|height`, stores full `PreviewPayload`
 - **Layout math**: `layoutDimensions()` is the single source of truth
-- **Position-aware mouse**: Scroll targets the pane under the cursor; click-drag in preview copies text
+- **Position-aware mouse**: Scroll targets the pane under the cursor (3 rows per wheel tick); click-drag in preview copies text
 - **Themes**: 9 built-in themes (7 dark, 2 light), persisted to `~/.config/seer/theme`
 
 ### Keybindings

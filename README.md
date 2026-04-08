@@ -12,14 +12,15 @@ Two panes: directory listing on the left, instant file preview on the right. Tha
 
 - Two-pane layout with live file preview
 - Syntax-highlighted code previews (Shiki, nord theme)
-- Styled Markdown rendering
+- Styled Markdown rendering with ANSI-aware word wrapping
+- Preview header shows `size · lines · ~tokens · modified` at a glance
 - Native Mermaid diagram preview (sequence, flowchart)
 - JSON pretty-printing with color
 - CSV/TSV table formatting
 - Directory summaries and binary hex dump
 - Archive content listing (zip, tar, gz, etc.)
 - Fast fuzzy search (`/` to filter)
-- Mouse support - scroll targets the pane under cursor, click-drag in preview to copy text
+- Mouse support — scroll targets the pane under cursor, click-drag in preview to copy text
 - 9 built-in color themes (7 dark, 2 light) with persistence
 - Nerd Font icons (with plain Unicode fallback)
 - Git status badges
@@ -97,6 +98,8 @@ Press `t` to cycle through themes. Your choice is saved to `~/.config/seer/theme
 - Rosé Pine
 - Gruvbox
 - Nord
+- Dracula
+- One Dark
 - GitHub Light
 - Solarized Light
 
