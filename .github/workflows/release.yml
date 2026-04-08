@@ -111,10 +111,18 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
 
-          # Compute sha256 for each tarball
+          # Compute sha256 for each tarball.
+          #
+          # Linux amd64 intentionally uses the *baseline* build for Homebrew
+          # — the non-baseline `bun-linux-x64` target requires AVX2 at
+          # runtime and crashes with `Illegal instruction` on older CPUs and
+          # on many VM / hypervisor environments where AVX2 is masked.
+          # Baseline runs on any x86-64 CPU since ~2008 for a negligible
+          # perf hit in a TUI app. Direct-download users can still grab the
+          # non-baseline tarball from the release page if they want it.
           SHA_DARWIN_ARM64=$(sha256sum dist/seer_darwin_arm64/seer_darwin_arm64.tar.gz | cut -d' ' -f1)
           SHA_DARWIN_AMD64=$(sha256sum dist/seer_darwin_amd64/seer_darwin_amd64.tar.gz | cut -d' ' -f1)
-          SHA_LINUX_AMD64=$(sha256sum dist/seer_linux_amd64/seer_linux_amd64.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_AMD64=$(sha256sum dist/seer_linux_amd64_baseline/seer_linux_amd64_baseline.tar.gz | cut -d' ' -f1)
           SHA_LINUX_ARM64=$(sha256sum dist/seer_linux_arm64/seer_linux_arm64.tar.gz | cut -d' ' -f1)
 
           BASE_URL="https://github.com/zackbart/seer/releases/download/v${VERSION}"
@@ -142,8 +150,11 @@ jobs:
             end
 
             on_linux do
+              # amd64 uses the baseline Bun build so it runs on any x86-64
+              # CPU (including VMs / older servers without AVX2). See
+              # release.yml for rationale.
               if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
-                url "${BASE_URL}/seer_linux_amd64.tar.gz"
+                url "${BASE_URL}/seer_linux_amd64_baseline.tar.gz"
                 sha256 "${SHA_LINUX_AMD64}"
               end
               if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
