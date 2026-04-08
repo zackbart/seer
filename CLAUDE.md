@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.7.
+Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.8.
 
 ## Tech Stack
 
@@ -55,6 +55,7 @@ All source code lives in `src/`, organized as:
 | `src/hooks/usePreviewCache.ts` | LRU preview cache |
 | `src/utils/fs.ts` | Directory listing, sorting, trash, git status |
 | `src/utils/clipboard.ts` | OS clipboard integration |
+| `src/utils/openInTerminal.ts` | Detect host terminal and open files in a new tab (nano) |
 | `src/utils/humanSize.ts` | File size formatting |
 | `src/utils/ansiText.ts` | ANSI-aware text utils: stripAnsi, visualWidth, ansiSlice, wrap, computeWrappedBody, truncateByWidth |
 
@@ -81,6 +82,7 @@ All source code lives in `src/`, organized as:
 - `s` — cycle sort mode
 - `t` — cycle theme
 - `p` — copy path to clipboard
+- `e` — edit file in nano (opens in a new terminal tab; supports Ghostty, iTerm2, Terminal.app, WezTerm, kitty, VS Code)
 - `</> ` — resize panes
 - `R` — reload
 - `backspace` — trash (with confirmation)

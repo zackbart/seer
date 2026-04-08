@@ -105,6 +105,7 @@ export function BottomBar({ state, width }: Props) {
       { key: "s", desc: "sort" },
       { key: ".", desc: "hidden" },
       { key: "p", desc: "path" },
+      { key: "e", desc: "edit" },
       { key: "t", desc: "theme" },
       { key: "⌫", desc: "trash" },
       { key: "q", desc: "quit" },

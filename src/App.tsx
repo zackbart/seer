@@ -14,6 +14,7 @@ import {
   loadGitStatus, previewKey, fuzzyMatch,
 } from "./utils/fs.js";
 import { copyToClipboard } from "./utils/clipboard.js";
+import { openInNewTab } from "./utils/openInTerminal.js";
 import { buildPreview } from "./previews/index.js";
 import { cacheGet, cacheSet } from "./hooks/usePreviewCache.js";
 import { useKeyBindings } from "./hooks/useKeyBindings.js";
@@ -526,6 +527,23 @@ export function App({ startDir, cwdFile }: AppProps) {
             dispatch({ type: "SET_STATE", payload: { status: `copied path: ${p}` } });
           } catch (e) {
             dispatch({ type: "SET_STATE", payload: { status: `copy failed: ${(e as Error).message}` } });
+          }
+        }
+        return;
+
+      // Edit in new terminal tab (nano)
+      case "e":
+        if (s.entries.length > 0 && s.selected < s.entries.length) {
+          const entry = s.entries[s.selected];
+          if (entry.isDir) {
+            dispatch({ type: "SET_STATE", payload: { status: "cannot edit directories" } });
+            return;
+          }
+          try {
+            await openInNewTab(entry.path, "nano");
+            dispatch({ type: "SET_STATE", payload: { status: `opened in nano: ${entry.name}` } });
+          } catch (err) {
+            dispatch({ type: "SET_STATE", payload: { status: `edit failed: ${(err as Error).message}` } });
           }
         }
         return;

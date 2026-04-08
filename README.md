@@ -83,6 +83,7 @@ function s() {
 | `s` | Cycle sort mode |
 | `t` | Cycle color theme |
 | `p` | Copy file path to clipboard |
+| `e` | Edit file in `nano` in a new terminal tab |
 | `<` / `>` | Resize panes |
 | `R` | Reload directory |
 | `backspace` | Move to trash (with confirmation) |
