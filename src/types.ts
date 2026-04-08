@@ -57,6 +57,9 @@ export interface AppState {
   height: number;
 
   previewOffset: number;
+  previewLineCount: number;
+  previewTokenEstimate: number;
+  previewTruncated: boolean;
   loading: boolean;
   requestId: number;
 
@@ -77,6 +80,15 @@ export interface AppState {
   previewSelecting: boolean;
   previewSelStart: { x: number; y: number };
   previewSelEnd: { x: number; y: number };
+}
+
+// ── preview payload ──────────────────────────────────────────────────────────
+
+export interface PreviewPayload {
+  text: string;
+  lineCount: number;
+  tokenEstimate: number;
+  truncated: boolean;
 }
 
 // ── constants ────────────────────────────────────────────────────────────────

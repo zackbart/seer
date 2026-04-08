@@ -1,13 +1,13 @@
-import { PREVIEW_CACHE_MAX } from "../types.js";
+import { PREVIEW_CACHE_MAX, PreviewPayload } from "../types.js";
 
-const cache = new Map<string, string>();
+const cache = new Map<string, PreviewPayload>();
 const cacheOrder: string[] = [];
 
-export function cacheGet(key: string): string | undefined {
+export function cacheGet(key: string): PreviewPayload | undefined {
   return cache.get(key);
 }
 
-export function cacheSet(key: string, value: string): void {
+export function cacheSet(key: string, value: PreviewPayload): void {
   if (!cache.has(key)) {
     cacheOrder.push(key);
   }

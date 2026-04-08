@@ -4,6 +4,7 @@ import path from "path";
 import { AppState } from "../types.js";
 import { categorise, fileIconExt, entryColor, symlinkIcon, colors } from "../theme.js";
 import { humanSize } from "../utils/humanSize.js";
+import { ansiSlice, computeWrappedBody, visualWidth } from "../utils/ansiText.js";
 
 interface Props {
   state: AppState;
@@ -28,14 +29,10 @@ export function Preview({ state, width, height }: Props) {
     if (e.isDir) suffix = "/";
     const symlinkSuffix = e.isSymlink && e.symlinkTarget ? ` → ${e.symlinkTarget}` : "";
 
-    let meta: React.ReactNode;
-    if (state.loading) {
-      meta = <Text color={colors.loading}>loading…</Text>;
-    } else if (!e.isDir) {
-      meta = <Text color={colors.muted}>{humanSize(e.size)}  {formatDate(e.modTime)}</Text>;
-    } else {
-      meta = <Text color={colors.dim}>{formatDate(e.modTime)}</Text>;
-    }
+    // Build metadata pieces. For files with a computed line count we show
+    // a richer breakdown (size · lines · tokens); directories and opaque
+    // previews (hex/archive/image) fall back to just the date.
+    const meta = buildHeaderMeta(state, e, innerW, icon, suffix, symlinkSuffix);
 
     rows.push(
       <Box key={`slot-${slot++}`}>
@@ -67,23 +64,22 @@ export function Preview({ state, width, height }: Props) {
   if (!previewBody && !state.loading) previewBody = "  no preview";
   if (state.loading && !previewBody) previewBody = "  loading…";
 
-  const allLines = previewBody.split("\n");
-  const maxOffset = Math.max(0, allLines.length - bodyH);
-  const offset = Math.min(state.previewOffset, maxOffset);
+  // Wrap once (memoized on inputs). `computeWrappedBody` is the single
+  // source of truth for scroll math — App.tsx uses the same helper so
+  // click-drag coordinates and wheel clamping stay in sync with render.
+  const body = React.useMemo(
+    () => computeWrappedBody(previewBody, innerW, bodyH, state.previewOffset),
+    [previewBody, innerW, bodyH, state.previewOffset],
+  );
 
   // Scroll indicator row
-  let scrollRow = 0; // how many rows the scroll indicator takes
-  if (offset > 0) {
+  if (body.scrollRow > 0) {
     rows.push(
       <Box key={`slot-${slot++}`}>
-        <Text color={colors.scrollbar}>  ↑ line {offset + 1}</Text>
+        <Text color={colors.scrollbar}>  ↑ line {body.offset + 1}</Text>
       </Box>,
     );
-    scrollRow = 1;
   }
-
-  const contentH = bodyH - scrollRow;
-  const visibleLines = allLines.slice(offset, offset + contentH);
 
   // Normalize selection coordinates
   const selecting = state.previewSelecting;
@@ -94,25 +90,25 @@ export function Preview({ state, width, height }: Props) {
     if (s0.y > s1.y || (s0.y === s1.y && s0.x > s1.x)) {
       [s0, s1] = [s1, s0];
     }
-    // Only show highlight while actively selecting
     if (selecting) {
       sel = { start: s0, end: s1 };
     }
   }
 
-  // Render each line individually for selection highlighting
-  for (let i = 0; i < contentH; i++) {
-    const line = i < visibleLines.length ? visibleLines[i] : "";
+  // Render each line individually for selection highlighting. Lines are
+  // already wrapped to ≤ innerW by computeWrappedBody, so truncate-end only
+  // fires as a safety net for wide-char edge cases.
+  for (let i = 0; i < body.contentH; i++) {
+    const line = i < body.visibleLines.length ? body.visibleLines[i] : "";
     // The row index in selection coordinates accounts for scroll indicator
-    const selRow = scrollRow + i;
+    const selRow = body.scrollRow + i;
 
     if (sel && selRow >= sel.start.y && selRow <= sel.end.y) {
-      // This line intersects the selection
       const colStart = selRow === sel.start.y ? sel.start.x : 0;
       const colEnd = selRow === sel.end.y ? sel.end.x : innerW;
 
       const before = ansiSlice(line, 0, colStart);
-      const selectedText = stripAnsi(ansiSlice(line, colStart, colEnd));
+      const selectedText = stripAnsiPlain(ansiSlice(line, colStart, colEnd));
       const after = ansiSlice(line, colEnd, innerW);
 
       rows.push(
@@ -144,6 +140,80 @@ export function Preview({ state, width, height }: Props) {
   );
 }
 
+// ── header metadata ──────────────────────────────────────────────────────────
+
+function buildHeaderMeta(
+  state: AppState,
+  e: import("../types.js").Entry,
+  innerW: number,
+  icon: string,
+  suffix: string,
+  symlinkSuffix: string,
+): React.ReactNode {
+  if (state.loading) {
+    return <Text color={colors.loading}>loading…</Text>;
+  }
+  if (e.isDir) {
+    return <Text color={colors.dim}>{formatDate(e.modTime)}</Text>;
+  }
+
+  const date = formatDate(e.modTime);
+
+  // Metric-less preview (hex/archive/image): fall back to size + date only.
+  if (state.previewLineCount <= 0) {
+    return (
+      <Text color={colors.muted}>{humanSize(e.size)}  {date}</Text>
+    );
+  }
+
+  // Budget check: how much room is left after the filename on the left and
+  // the date on the right? Drop metrics from least important to most.
+  const nameWidth = visualWidth(` ${icon}${e.name}${suffix}${symlinkSuffix}`);
+  const dateWidth = visualWidth(date);
+  const trailingSpace = 1;
+  const spacerMin = 2;
+  // Reserve a gap between metrics and date.
+  const gap = 2;
+  const budget = innerW - nameWidth - dateWidth - trailingSpace - spacerMin - gap;
+
+  const size = humanSize(e.size);
+  const linesText = formatLines(state.previewLineCount, state.previewTruncated);
+  const tokensText = formatTokens(state.previewTokenEstimate, state.previewTruncated);
+
+  const sep = " · ";
+  const fullChunks: string[] = [size, linesText, tokensText];
+  let chunks = fullChunks.slice();
+
+  // Drop from the right (tokens, then lines) if we can't fit.
+  const measure = (parts: string[]) => visualWidth(parts.join(sep));
+  while (chunks.length > 1 && measure(chunks) > budget) {
+    chunks.pop();
+  }
+  // If even size alone doesn't fit, just show size + date.
+  if (measure(chunks) > budget) {
+    chunks = [size];
+  }
+
+  return (
+    <Text color={colors.muted}>{chunks.join(sep)}  {date}</Text>
+  );
+}
+
+function formatLines(n: number, truncated: boolean): string {
+  const suffix = truncated ? "+" : "";
+  if (n < 1000) return `${n}${suffix} lines`;
+  if (n < 10000) return `${(n / 1000).toFixed(1)}k${suffix} lines`;
+  return `${Math.round(n / 1000)}k${suffix} lines`;
+}
+
+function formatTokens(n: number, truncated: boolean): string {
+  const suffix = truncated ? "+" : "";
+  if (n < 1000) return `~${n}${suffix} tok`;
+  if (n < 10000) return `~${(n / 1000).toFixed(1)}k${suffix} tok`;
+  if (n < 1_000_000) return `~${Math.round(n / 1000)}k${suffix} tok`;
+  return `~${(n / 1_000_000).toFixed(1)}M${suffix} tok`;
+}
+
 function formatDate(d: Date): string {
   const month = d.toLocaleDateString("en-US", { month: "short" });
   const day = d.getDate().toString().padStart(2, "0");
@@ -152,71 +222,9 @@ function formatDate(d: Date): string {
   return `${month} ${day} ${h}:${m}`;
 }
 
-// ── ANSI-aware string slicing ────────────────────────────────────────────────
-
-// Strip ANSI escape codes from a string.
-function stripAnsi(s: string): string {
+// Strip ANSI from a selected-text slice for the highlight overlay. Kept
+// local (not using the util's stripAnsi) to avoid accidentally widening
+// the background highlight when the original line had color codes.
+function stripAnsiPlain(s: string): string {
   return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
-}
-
-// Slice a string containing ANSI escape codes by visible column range [startCol, endCol).
-// Preserves ANSI color state across the slice boundary.
-function ansiSlice(str: string, startCol: number, endCol: number): string {
-  if (startCol >= endCol) return "";
-  if (!str) return "";
-
-  // Fast path: no ANSI codes at all
-  if (!str.includes("\x1b[")) {
-    return str.slice(startCol, endCol);
-  }
-
-  // Walk the string, tracking visible column and ANSI state
-  const ansiRe = /\x1b\[[0-9;]*[a-zA-Z]/g;
-  let result = "";
-  let col = 0;
-  let i = 0;
-  let pendingAnsi = ""; // accumulated ANSI state before our range
-  let emitting = false;
-
-  while (i < str.length && col < endCol) {
-    // Try to match an ANSI escape at current position
-    ansiRe.lastIndex = i;
-    const match = ansiRe.exec(str);
-
-    if (match && match.index === i) {
-      const seq = match[0];
-      if (col >= startCol) {
-        // In range — emit directly
-        result += seq;
-      } else {
-        // Before range — track state for later
-        if (seq === "\x1b[0m") {
-          pendingAnsi = "";
-        } else {
-          pendingAnsi = seq;
-        }
-      }
-      i += seq.length;
-      continue;
-    }
-
-    // Visible character
-    if (col >= startCol) {
-      if (!emitting) {
-        // First char in range — prepend any pending ANSI state
-        if (pendingAnsi) result += pendingAnsi;
-        emitting = true;
-      }
-      result += str[i];
-    }
-    col++;
-    i++;
-  }
-
-  // Append reset if we emitted any ANSI codes
-  if (result && (pendingAnsi || result.includes("\x1b["))) {
-    result += "\x1b[0m";
-  }
-
-  return result;
 }

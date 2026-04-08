@@ -4,9 +4,10 @@ import path from "path";
 import fsp from "fs/promises";
 
 import {
-  AppState, Entry, SortMode,
+  AppState, Entry, SortMode, PreviewPayload,
   SORT_MODE_COUNT, sortModeLabel,
 } from "./types.js";
+import { computeWrappedBody, stripAnsi } from "./utils/ansiText.js";
 import { colors, cycleTheme } from "./theme.js";
 import {
   listDir, applySort, moveToTrash,
@@ -29,7 +30,7 @@ type Action =
   | { type: "SET_STATE"; payload: Partial<AppState> }
   | { type: "NAVIGATE"; idx: number }
   | { type: "SET_ENTRIES"; all: Entry[]; filtered: Entry[] }
-  | { type: "SET_PREVIEW"; content: string; requestId: number; cacheKey: string }
+  | { type: "SET_PREVIEW"; payload: PreviewPayload; requestId: number; cacheKey: string }
   | { type: "SET_GIT_STATUS"; cwd: string; status: Map<string, string> | null }
   | { type: "RESIZE"; width: number; height: number };
 
@@ -43,8 +44,15 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, allEntries: action.all, entries: action.filtered };
     case "SET_PREVIEW":
       if (action.requestId !== state.requestId) return state;
-      cacheSet(action.cacheKey, action.content);
-      return { ...state, preview: action.content, loading: false };
+      cacheSet(action.cacheKey, action.payload);
+      return {
+        ...state,
+        preview: action.payload.text,
+        previewLineCount: action.payload.lineCount,
+        previewTokenEstimate: action.payload.tokenEstimate,
+        previewTruncated: action.payload.truncated,
+        loading: false,
+      };
     case "SET_GIT_STATUS":
       if (action.cwd !== state.cwd) return state;
       return { ...state, gitStatus: action.status, gitLoadCwd: action.cwd };
@@ -84,6 +92,9 @@ function createInitialState(cwd: string): AppState {
     width: 0,
     height: 0,
     previewOffset: 0,
+    previewLineCount: 0,
+    previewTokenEstimate: 0,
+    previewTruncated: false,
     loading: false,
     requestId: 0,
     searching: false,
@@ -175,7 +186,16 @@ export function App({ startDir, cwdFile }: AppProps) {
 
     const cached = cacheGet(key);
     if (cached !== undefined) {
-      dispatch({ type: "SET_STATE", payload: { preview: cached, loading: false } });
+      dispatch({
+        type: "SET_STATE",
+        payload: {
+          preview: cached.text,
+          previewLineCount: cached.lineCount,
+          previewTokenEstimate: cached.tokenEstimate,
+          previewTruncated: cached.truncated,
+          loading: false,
+        },
+      });
       return;
     }
 
@@ -184,12 +204,17 @@ export function App({ startDir, cwdFile }: AppProps) {
     dispatch({ type: "SET_STATE", payload: { loading: true, requestId: rid } });
 
     try {
-      const content = await buildPreview(entry.path, width, height);
-      dispatch({ type: "SET_PREVIEW", content, requestId: rid, cacheKey: key });
+      const payload = await buildPreview(entry.path, width, height);
+      dispatch({ type: "SET_PREVIEW", payload, requestId: rid, cacheKey: key });
     } catch (e) {
       dispatch({
         type: "SET_PREVIEW",
-        content: `preview error: ${(e as Error).message}`,
+        payload: {
+          text: `preview error: ${(e as Error).message}`,
+          lineCount: 0,
+          tokenEstimate: 0,
+          truncated: false,
+        },
         requestId: rid,
         cacheKey: key,
       });
@@ -529,13 +554,18 @@ export function App({ startDir, cwdFile }: AppProps) {
     // Scroll wheel — scroll whichever pane the mouse is over
     if (event.button === 64 || event.button === 65) {
       const direction = event.button === 64 ? "up" : "down";
-      const { leftW } = layoutDimensions(s.width, s.height, s.paneOffset);
+      const { leftW, rightW, bodyH } = layoutDimensions(s.width, s.height, s.paneOffset);
       const overPreview = event.x > leftW;
 
       if (overPreview) {
-        const maxOff = Math.max(0, s.preview.split("\n").length - Math.max(1, s.height - 8));
+        // Use the same wrap/layout math as Preview.tsx so scroll clamps to
+        // the real bottom of the wrapped content. innerW = rightW - border(2);
+        // contentBodyH = bodyH - border(2) - header(1) - divider(1).
+        const innerW = Math.max(1, rightW - 2);
+        const contentBodyH = Math.max(1, bodyH - 4);
+        const { maxOffset } = computeWrappedBody(s.preview, innerW, contentBodyH, s.previewOffset);
         const newOff = direction === "down"
-          ? Math.min(s.previewOffset + 1, maxOff)
+          ? Math.min(s.previewOffset + 1, maxOffset)
           : Math.max(s.previewOffset - 1, 0);
         dispatch({ type: "SET_STATE", payload: { previewOffset: newOff } });
       } else {
@@ -659,35 +689,25 @@ function applySearch(entries: Entry[], query: string): Entry[] {
   return entries.filter((e) => fuzzyMatch(e.name, query));
 }
 
-// Strip ANSI escape codes from a string.
-function stripAnsi(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
-}
-
 // Get the plain-text visible preview lines (matching what Preview.tsx renders).
+// Delegates to computeWrappedBody so row coordinates line up with the render
+// path — click-drag selection uses the row indices this returns.
 function getVisiblePreviewLines(state: AppState, width: number, height: number): string[] {
   let body = state.preview;
   if (!body && !state.loading) body = "  no preview";
   if (state.loading && !body) body = "  loading…";
 
-  const allLines = body.split("\n");
-  const maxOffset = Math.max(0, allLines.length - height);
-  const offset = Math.min(state.previewOffset, maxOffset);
+  const { offset, scrollRow, visibleLines } = computeWrappedBody(body, width, height, state.previewOffset);
 
-  let contentH = height;
   const result: string[] = [];
-
-  if (offset > 0) {
-    contentH--;
+  if (scrollRow > 0) {
     result.push(`  ↑ line ${offset + 1}`);
   }
-
-  const visible = allLines.slice(offset, offset + contentH);
-  for (const line of visible) {
-    result.push(stripAnsi(line).slice(0, width));
+  for (const line of visibleLines) {
+    // Selection extraction wants plain text; strip ANSI here so downstream
+    // slice(colStart, colEnd) measures in visible columns.
+    result.push(stripAnsi(line));
   }
-
-  // Pad to height
   while (result.length < height) result.push("");
   return result.slice(0, height);
 }
