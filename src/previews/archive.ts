@@ -52,42 +52,50 @@ export async function buildArchivePreview(filePath: string): Promise<string> {
   return output.join("\n");
 }
 
+// Memoize `which` lookups — used to spawn a sync subprocess per archive preview.
+const cmdAvailability = new Map<string, boolean>();
+
+function hasCmd(cmd: string): boolean {
+  const cached = cmdAvailability.get(cmd);
+  if (cached !== undefined) return cached;
+  let ok = false;
+  try {
+    ok = Bun.spawnSync(["which", cmd]).exitCode === 0;
+  } catch {
+    ok = false;
+  }
+  cmdAvailability.set(cmd, ok);
+  return ok;
+}
+
 async function archiveListings(filePath: string, ext: string): Promise<string[] | null> {
   let args: string[] | null = null;
 
-  const hasCmd = async (cmd: string) => {
-    try {
-      return Bun.spawnSync(["which", cmd]).exitCode === 0;
-    } catch {
-      return false;
-    }
-  };
-
   switch (ext) {
     case ".zip": case ".jar": case ".war":
-      if (await hasCmd("unzip")) {
+      if (hasCmd("unzip")) {
         args = ["unzip", "-Z1", filePath];
-      } else if (await hasCmd("7z")) {
+      } else if (hasCmd("7z")) {
         args = ["7z", "l", "-ba", "-slt", filePath];
       }
       break;
     case ".tar":
-      if (await hasCmd("tar")) args = ["tar", "tf", filePath];
+      if (hasCmd("tar")) args = ["tar", "tf", filePath];
       break;
     case ".gz": case ".tgz":
-      if (await hasCmd("tar")) args = ["tar", "tzf", filePath];
+      if (hasCmd("tar")) args = ["tar", "tzf", filePath];
       break;
     case ".bz2": case ".tbz2":
-      if (await hasCmd("tar")) args = ["tar", "tjf", filePath];
+      if (hasCmd("tar")) args = ["tar", "tjf", filePath];
       break;
     case ".xz": case ".txz":
-      if (await hasCmd("tar")) args = ["tar", "tJf", filePath];
+      if (hasCmd("tar")) args = ["tar", "tJf", filePath];
       break;
     case ".zst":
-      if (await hasCmd("tar")) args = ["tar", "--use-compress-program=zstd", "-tf", filePath];
+      if (hasCmd("tar")) args = ["tar", "--use-compress-program=zstd", "-tf", filePath];
       break;
     case ".7z": case ".rar":
-      if (await hasCmd("7z")) args = ["7z", "l", "-ba", filePath];
+      if (hasCmd("7z")) args = ["7z", "l", "-ba", filePath];
       break;
   }
 
@@ -103,7 +111,7 @@ async function archiveListings(filePath: string, ext: string): Promise<string[] 
 
     // Detect 7z -slt output
     const used7z = ext === ".7z" || ext === ".rar" ||
-      ((ext === ".zip" || ext === ".jar" || ext === ".war") && !(await hasCmd("unzip")));
+      ((ext === ".zip" || ext === ".jar" || ext === ".war") && !hasCmd("unzip"));
     if (used7z && raw.length > 0) {
       const paths = raw
         .filter((l) => l.startsWith("Path = "))

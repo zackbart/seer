@@ -7,44 +7,45 @@ import { Entry, SortMode } from "../types.js";
 
 export async function listDir(dirPath: string, showHidden: boolean): Promise<Entry[]> {
   const items = await fsp.readdir(dirPath, { withFileTypes: true });
-  const entries: Entry[] = [];
 
-  for (const item of items) {
-    const name = item.name;
-    if (!showHidden && name.startsWith(".")) continue;
+  // Resolve per-entry metadata in parallel. Serial for-await here used to
+  // dominate changeDir latency on large directories.
+  const resolved = await Promise.all(
+    items.map(async (item): Promise<Entry | null> => {
+      const name = item.name;
+      if (!showHidden && name.startsWith(".")) return null;
 
-    const full = path.join(dirPath, name);
+      const full = path.join(dirPath, name);
 
-    let isSymlink = item.isSymbolicLink();
-    let symlinkTarget = "";
-    let isDir = item.isDirectory();
-    let size = 0;
-    let modTime = new Date();
+      try {
+        const lstat = await fsp.lstat(full);
+        let isSymlink = lstat.isSymbolicLink();
+        let isDir = lstat.isDirectory();
+        let size = lstat.size;
+        let modTime = lstat.mtime;
+        let symlinkTarget = "";
 
-    try {
-      const lstat = await fsp.lstat(full);
-      isSymlink = lstat.isSymbolicLink();
-      size = lstat.size;
-      modTime = lstat.mtime;
-      isDir = lstat.isDirectory();
+        if (isSymlink) {
+          const [targetResult, statResult] = await Promise.allSettled([
+            fsp.readlink(full),
+            fsp.stat(full),
+          ]);
+          if (targetResult.status === "fulfilled") symlinkTarget = targetResult.value;
+          if (statResult.status === "fulfilled") {
+            isDir = statResult.value.isDirectory();
+            size = statResult.value.size;
+            modTime = statResult.value.mtime;
+          }
+        }
 
-      if (isSymlink) {
-        try {
-          symlinkTarget = await fsp.readlink(full);
-        } catch {}
-        try {
-          const stat = await fsp.stat(full);
-          isDir = stat.isDirectory();
-          size = stat.size;
-          modTime = stat.mtime;
-        } catch {}
+        return { name, path: full, isDir, size, modTime, isSymlink, symlinkTarget };
+      } catch {
+        return null;
       }
-    } catch {
-      continue;
-    }
+    }),
+  );
 
-    entries.push({ name, path: full, isDir, size, modTime, isSymlink, symlinkTarget });
-  }
+  const entries = resolved.filter((e): e is Entry => e !== null);
 
   // Default sort: dirs first, then alphabetical
   entries.sort((a, b) => {
@@ -124,10 +125,75 @@ export async function moveToTrash(filePath: string): Promise<void> {
 
 // ── git status ───────────────────────────────────────────────────────────────
 
+// Cache git status results keyed on the cwd + .git/index mtime. Revisiting a
+// cwd whose index hasn't changed avoids spawning a fresh subprocess.
+interface GitCacheEntry {
+  indexMtimeMs: number;
+  status: Map<string, string> | null;
+}
+const gitStatusCache = new Map<string, GitCacheEntry>();
+
+export function invalidateGitStatusCache(cwd?: string): void {
+  if (cwd === undefined) gitStatusCache.clear();
+  else gitStatusCache.delete(cwd);
+}
+
+async function readGitIndexMtime(cwd: string): Promise<number | null> {
+  // Walk up looking for a .git directory (or a .git file for worktrees).
+  let dir = cwd;
+  while (true) {
+    const gitPath = path.join(dir, ".git");
+    try {
+      const st = await fsp.stat(gitPath);
+      if (st.isDirectory()) {
+        const idxPath = path.join(gitPath, "index");
+        try {
+          const idxStat = await fsp.stat(idxPath);
+          return idxStat.mtimeMs;
+        } catch {
+          // No index yet (fresh repo) — fall back to HEAD mtime.
+          try {
+            const headStat = await fsp.stat(path.join(gitPath, "HEAD"));
+            return headStat.mtimeMs;
+          } catch {
+            return null;
+          }
+        }
+      }
+      // .git is a file (worktree): read to find the real gitdir, then stat its index.
+      const content = await fsp.readFile(gitPath, "utf-8");
+      const match = content.match(/^gitdir:\s*(.+)$/m);
+      if (!match) return null;
+      const gitdir = path.isAbsolute(match[1]) ? match[1] : path.join(dir, match[1]);
+      try {
+        const idxStat = await fsp.stat(path.join(gitdir, "index"));
+        return idxStat.mtimeMs;
+      } catch {
+        return null;
+      }
+    } catch {
+      // Not here, walk up.
+      const parent = path.dirname(dir);
+      if (parent === dir) return null;
+      dir = parent;
+    }
+  }
+}
+
 export async function loadGitStatus(
   cwd: string,
   procRef?: { current: ReturnType<typeof Bun.spawn> | null },
+  options?: { force?: boolean },
 ): Promise<Map<string, string> | null> {
+  const force = options?.force === true;
+  const indexMtime = await readGitIndexMtime(cwd);
+  if (!force && indexMtime !== null) {
+    const cached = gitStatusCache.get(cwd);
+    if (cached && cached.indexMtimeMs === indexMtime) {
+      return cached.status;
+    }
+  }
+
   try {
     const proc = Bun.spawn(["git", "-C", cwd, "status", "--porcelain"], {
       stdout: "pipe",
@@ -137,7 +203,12 @@ export async function loadGitStatus(
     const text = await new Response(proc.stdout).text();
     const exitCode = await proc.exited;
     if (procRef) procRef.current = null;
-    if (exitCode !== 0) return null;
+    if (exitCode !== 0) {
+      if (indexMtime !== null) {
+        gitStatusCache.set(cwd, { indexMtimeMs: indexMtime, status: null });
+      }
+      return null;
+    }
 
     const status = new Map<string, string>();
     for (const line of text.split("\n")) {
@@ -165,6 +236,9 @@ export async function loadGitStatus(
           }
         }
       }
+    }
+    if (indexMtime !== null) {
+      gitStatusCache.set(cwd, { indexMtimeMs: indexMtime, status });
     }
     return status;
   } catch {

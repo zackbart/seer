@@ -1,6 +1,6 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { AppState } from "../types.js";
+import { AppState, FAST_MODE } from "../types.js";
 import { colors } from "../theme.js";
 import { visualWidth } from "../utils/ansiText.js";
 
@@ -86,6 +86,9 @@ export function BottomBar({ state, width }: Props) {
     const isReady = state.status === "ready";
     statusLeft.push({ text: "● ", color: isReady ? colors.success : colors.accent });
     statusLeft.push({ text: state.status, color: colors.status });
+  }
+  if (FAST_MODE) {
+    statusLeft.push({ text: "  [fast]", color: colors.accent, bold: true });
   }
 
   // ── hints row ──────────────────────────────────────────────────────────

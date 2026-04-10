@@ -1,20 +1,39 @@
 import fsp from "fs/promises";
 import path from "path";
-import { MAX_PREVIEW_BYTES, PreviewPayload } from "../types.js";
+import { FAST_MODE, MAX_PREVIEW_BYTES, PreviewPayload } from "../types.js";
 import { imageExts, archiveExts, officeExts, pdfExts } from "../theme.js";
 import { isLikelyBinary } from "../utils/fs.js";
 import { humanSize } from "../utils/humanSize.js";
-import { buildDirPreview } from "./directory.js";
-import { highlightCode } from "./code.js";
-import { renderMarkdown } from "./markdown.js";
-import { renderJSONPreview } from "./json.js";
-import { renderCSVPreview } from "./csv.js";
-import { buildHexPreview } from "./hex.js";
-import { buildArchivePreview } from "./archive.js";
-import { renderMermaid } from "./mermaid.js";
-import { renderDocxPreview } from "./docx.js";
-import { renderXlsxPreview } from "./xlsx.js";
-import { renderPdfPreview } from "./pdf.js";
+
+// ── lazy previewer loading ──────────────────────────────────────────────────
+// Each previewer is dynamic-imported on first use and the promise is memoized,
+// so repeat calls resolve instantly and untouched previewers never land in the
+// startup image. This is the biggest startup win — mammoth, exceljs, unpdf,
+// marked+marked-terminal, and shiki are all kept out of the critical path.
+
+let directoryMod: Promise<typeof import("./directory.js")> | null = null;
+let codeMod: Promise<typeof import("./code.js")> | null = null;
+let markdownMod: Promise<typeof import("./markdown.js")> | null = null;
+let jsonMod: Promise<typeof import("./json.js")> | null = null;
+let csvMod: Promise<typeof import("./csv.js")> | null = null;
+let hexMod: Promise<typeof import("./hex.js")> | null = null;
+let archiveMod: Promise<typeof import("./archive.js")> | null = null;
+let mermaidMod: Promise<typeof import("./mermaid.js")> | null = null;
+let docxMod: Promise<typeof import("./docx.js")> | null = null;
+let xlsxMod: Promise<typeof import("./xlsx.js")> | null = null;
+let pdfMod: Promise<typeof import("./pdf.js")> | null = null;
+
+const loadDirectory = () => (directoryMod ??= import("./directory.js"));
+const loadCode = () => (codeMod ??= import("./code.js"));
+const loadMarkdown = () => (markdownMod ??= import("./markdown.js"));
+const loadJson = () => (jsonMod ??= import("./json.js"));
+const loadCsv = () => (csvMod ??= import("./csv.js"));
+const loadHex = () => (hexMod ??= import("./hex.js"));
+const loadArchive = () => (archiveMod ??= import("./archive.js"));
+const loadMermaid = () => (mermaidMod ??= import("./mermaid.js"));
+const loadDocx = () => (docxMod ??= import("./docx.js"));
+const loadXlsx = () => (xlsxMod ??= import("./xlsx.js"));
+const loadPdf = () => (pdfMod ??= import("./pdf.js"));
 
 const MAX_OFFICE_BYTES = 10 * 1024 * 1024;
 
@@ -30,16 +49,51 @@ function withMetrics(text: string, source: string, truncated: boolean): PreviewP
   return { text, lineCount, tokenEstimate, truncated };
 }
 
+function aborted(signal?: AbortSignal): boolean {
+  return signal?.aborted === true;
+}
+
+// Extensions that get special "heavy" treatment: code highlighting, markdown
+// rendering, or office/pdf parsing. Cheap previewers (json, csv, hex, dir,
+// plain text) bypass debounce in App.tsx.
+const CODE_HIGHLIGHT_EXTS = new Set([
+  "js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts",
+  "py", "rb", "rs", "go", "c", "cc", "cpp", "cxx", "h", "hpp",
+  "java", "cs", "php", "swift", "kt", "kts", "lua", "hs",
+  "ex", "exs", "ml", "mli", "clj", "cljs", "scala",
+  "sh", "bash", "zsh", "fish", "ps1", "psm1",
+  "yaml", "yml", "toml", "xml", "svg", "plist", "ini", "conf", "cfg",
+  "sql", "graphql", "gql", "css", "scss", "sass", "less",
+  "html", "htm", "svelte", "vue", "dockerfile",
+  "r", "dart", "zig", "nix", "tf", "tfvars", "proto",
+]);
+
+export function isExpensivePreview(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  if (!ext) return false;
+  if (officeExts.has(ext) || pdfExts.has(ext)) return true;
+  if (ext === ".md" || ext === ".markdown" || ext === ".mdx") return true;
+  if (ext === ".mmd" || ext === ".mermaid") return true;
+  if (archiveExts.has(ext)) return true;
+  const bare = ext.startsWith(".") ? ext.slice(1) : ext;
+  return CODE_HIGHLIGHT_EXTS.has(bare);
+}
+
 // ── main entry ──────────────────────────────────────────────────────────────
 
 export async function buildPreview(
   filePath: string,
   width: number,
   _height: number,
+  signal?: AbortSignal,
 ): Promise<PreviewPayload> {
+  if (aborted(signal)) return emptyMetrics("");
   const stat = await fsp.stat(filePath);
+  if (aborted(signal)) return emptyMetrics("");
 
   if (stat.isDirectory()) {
+    const { buildDirPreview } = await loadDirectory();
+    if (aborted(signal)) return emptyMetrics("");
     return emptyMetrics(await buildDirPreview(filePath));
   }
 
@@ -54,12 +108,19 @@ export async function buildPreview(
 
   // Archive files
   if (archiveExts.has(ext)) {
+    const { buildArchivePreview } = await loadArchive();
+    if (aborted(signal)) return emptyMetrics("");
     return emptyMetrics(await buildArchivePreview(filePath));
   }
 
   // Office / PDF files — ZIP or binary formats that require a full-file read
   // and a parser library. Must be intercepted before the UTF-8 read path.
   if (officeExts.has(ext) || pdfExts.has(ext)) {
+    if (FAST_MODE) {
+      return emptyMetrics(
+        `${path.basename(filePath)}\nsize: ${humanSize(stat.size)}\n\n(office/pdf preview disabled in fast mode — unset SEER_FAST_MODE to enable)`,
+      );
+    }
     if (stat.size > MAX_OFFICE_BYTES) {
       return emptyMetrics(
         `${path.basename(filePath)}\nsize: ${humanSize(stat.size)}\n\n(file too large to preview — limit ${humanSize(MAX_OFFICE_BYTES)})`,
@@ -67,20 +128,25 @@ export async function buildPreview(
     }
     try {
       const buffer = await fsp.readFile(filePath);
+      if (aborted(signal)) return emptyMetrics("");
       if (ext === ".docx") {
+        const { renderDocxPreview } = await loadDocx();
+        if (aborted(signal)) return emptyMetrics("");
         const r = await renderDocxPreview(buffer);
         return withMetrics(r.rendered, r.extracted, r.truncated);
       }
       if (ext === ".xlsx") {
+        const { renderXlsxPreview } = await loadXlsx();
+        if (aborted(signal)) return emptyMetrics("");
         const r = await renderXlsxPreview(buffer, width);
         return withMetrics(r.rendered, r.extracted, r.truncated);
       }
       if (ext === ".pdf") {
+        const { renderPdfPreview } = await loadPdf();
+        if (aborted(signal)) return emptyMetrics("");
         const r = await renderPdfPreview(buffer);
         return withMetrics(r.rendered, r.extracted, r.truncated);
       }
-      // Defensive fallback: officeExts/pdfExts contained an extension with
-      // no matching branch. Should be unreachable today.
       return emptyMetrics(
         `${path.basename(filePath)}\n\n(no preview handler registered for ${ext})`,
       );
@@ -97,16 +163,19 @@ export async function buildPreview(
   try {
     const buf = Buffer.alloc(MAX_PREVIEW_BYTES);
     const { bytesRead } = await fd.read(buf, 0, MAX_PREVIEW_BYTES, 0);
+    if (aborted(signal)) return emptyMetrics("");
     const data = buf.subarray(0, bytesRead);
 
     // Binary detection
     if (isLikelyBinary(data)) {
+      const { buildHexPreview } = await loadHex();
       return emptyMetrics(buildHexPreview(data, path.basename(filePath), stat.size, stat.mtime));
     }
 
     let text = data.toString("utf-8");
     // Check for invalid UTF-8 (replacement character indicates issues)
     if (text.includes("\uFFFD") && bytesRead > 0) {
+      const { buildHexPreview } = await loadHex();
       return emptyMetrics(buildHexPreview(data, path.basename(filePath), stat.size, stat.mtime));
     }
 
@@ -118,19 +187,25 @@ export async function buildPreview(
     text = text.replace(/\t/g, "    ");
 
     const truncated = bytesRead === MAX_PREVIEW_BYTES;
-    // Snapshot metrics from the normalized source *before* rendering — so
-    // "lines" matches the user's file, not the rendered markdown/highlighted
-    // output. Tab-expansion inflates token estimates slightly; that's fine
-    // for a char/4 approximation.
     const metricSource = text;
 
     switch (ext) {
       case ".md":
       case ".markdown":
       case ".mdx": {
+        if (FAST_MODE) {
+          // In fast mode, treat markdown as plain text — no marked, no Shiki.
+          const out = truncated ? text + "\n\n... preview truncated ..." : text;
+          return withMetrics(out, metricSource, truncated);
+        }
+        const { renderMarkdown } = await loadMarkdown();
+        if (aborted(signal)) return emptyMetrics("");
         const rendered = renderMarkdown(text, width, truncated);
         if (rendered) return withMetrics(rendered, metricSource, truncated);
-        const hl = await highlightCode(filePath, text);
+        const { highlightCode } = await loadCode();
+        if (aborted(signal)) return emptyMetrics("");
+        const hl = await highlightCode(filePath, text, signal);
+        if (aborted(signal)) return emptyMetrics("");
         if (hl !== text) {
           const out = truncated ? hl + "\n\n... preview truncated ..." : hl;
           return withMetrics(out, metricSource, truncated);
@@ -138,18 +213,35 @@ export async function buildPreview(
         return withMetrics(text, metricSource, truncated);
       }
       case ".mmd":
-      case ".mermaid":
+      case ".mermaid": {
+        const { renderMermaid } = await loadMermaid();
+        if (aborted(signal)) return emptyMetrics("");
         return withMetrics(await renderMermaid(text), metricSource, truncated);
+      }
       case ".json":
+      case ".jsonc": {
+        const { renderJSONPreview } = await loadJson();
         return withMetrics(renderJSONPreview(text, truncated), metricSource, truncated);
-      case ".csv":
+      }
+      case ".csv": {
+        const { renderCSVPreview } = await loadCsv();
         return withMetrics(renderCSVPreview(text, ",", width, truncated), metricSource, truncated);
-      case ".tsv":
+      }
+      case ".tsv": {
+        const { renderCSVPreview } = await loadCsv();
         return withMetrics(renderCSVPreview(text, "\t", width, truncated), metricSource, truncated);
+      }
     }
 
     // Syntax highlighting for everything else
-    const highlighted = await highlightCode(filePath, text);
+    if (FAST_MODE) {
+      const out = truncated ? text + "\n\n... preview truncated ..." : text;
+      return withMetrics(out, metricSource, truncated);
+    }
+    const { highlightCode } = await loadCode();
+    if (aborted(signal)) return emptyMetrics("");
+    const highlighted = await highlightCode(filePath, text, signal);
+    if (aborted(signal)) return emptyMetrics("");
     if (highlighted !== text) {
       const out = truncated ? highlighted + "\n\n... preview truncated ..." : highlighted;
       return withMetrics(out, metricSource, truncated);
@@ -159,5 +251,44 @@ export async function buildPreview(
     return withMetrics(out, metricSource, truncated);
   } finally {
     await fd.close();
+  }
+}
+
+// ── fast-path helpers for App.tsx measurement-gated upgrade ─────────────────
+// buildPlainPreview reads the file and returns an un-highlighted payload.
+// It is used as the "first stage" when Shiki is slow; App.tsx then runs the
+// full buildPreview to compute the highlighted version and dispatches an
+// upgrade. Only code files route through here; everything else uses the
+// normal buildPreview path.
+export async function buildPlainPreview(
+  filePath: string,
+  signal?: AbortSignal,
+): Promise<PreviewPayload | null> {
+  if (aborted(signal)) return null;
+  try {
+    const stat = await fsp.stat(filePath);
+    if (aborted(signal) || stat.isDirectory()) return null;
+
+    const fd = await fsp.open(filePath, "r");
+    try {
+      const buf = Buffer.alloc(MAX_PREVIEW_BYTES);
+      const { bytesRead } = await fd.read(buf, 0, MAX_PREVIEW_BYTES, 0);
+      if (aborted(signal)) return null;
+      const data = buf.subarray(0, bytesRead);
+      if (isLikelyBinary(data)) return null;
+
+      let text = data.toString("utf-8");
+      if (text.includes("\uFFFD") && bytesRead > 0) return null;
+
+      text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      text = text.replace(/\t/g, "    ");
+      const truncated = bytesRead === MAX_PREVIEW_BYTES;
+      const out = truncated ? text + "\n\n... preview truncated ..." : text;
+      return withMetrics(out, text, truncated);
+    } finally {
+      await fd.close();
+    }
+  } catch {
+    return null;
   }
 }

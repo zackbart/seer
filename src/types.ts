@@ -93,6 +93,18 @@ export interface PreviewPayload {
 
 // ── constants ────────────────────────────────────────────────────────────────
 
-export const MAX_PREVIEW_BYTES = 256 * 1024;
+export const FAST_MODE = process.env.SEER_FAST_MODE === "1";
+
+export const MAX_PREVIEW_BYTES = FAST_MODE ? 64 * 1024 : 256 * 1024;
 export const MAX_DIR_PREVIEW = 40;
 export const PREVIEW_CACHE_MAX = 50;
+
+// Debounce applied to expensive previewers (code/markdown/office/pdf) while
+// j/k-spam navigating. Cheap previewers (json/csv/hex/directory/plain) bypass.
+export const PREVIEW_DEBOUNCE_MS = FAST_MODE ? 150 : 60;
+
+// Fast-path gate: split a code preview into a plain-text dispatch followed by
+// the highlighted dispatch only when the rolling median Shiki time has exceeded
+// this threshold. On fast hardware the gate stays dormant so there's no extra
+// render commit per file.
+export const SHIKI_FAST_PATH_THRESHOLD_MS = 40;

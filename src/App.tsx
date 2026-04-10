@@ -6,6 +6,7 @@ import fsp from "fs/promises";
 import {
   AppState, Entry, SortMode, PreviewPayload,
   SORT_MODE_COUNT, sortModeLabel,
+  FAST_MODE, PREVIEW_DEBOUNCE_MS, SHIKI_FAST_PATH_THRESHOLD_MS,
 } from "./types.js";
 import { computeWrappedBody, stripAnsi } from "./utils/ansiText.js";
 import { colors, cycleTheme } from "./theme.js";
@@ -15,7 +16,7 @@ import {
 } from "./utils/fs.js";
 import { copyToClipboard } from "./utils/clipboard.js";
 import { openInNewTab } from "./utils/openInTerminal.js";
-import { buildPreview } from "./previews/index.js";
+import { buildPreview, buildPlainPreview, isExpensivePreview } from "./previews/index.js";
 import { cacheGet, cacheSet } from "./hooks/usePreviewCache.js";
 import { useKeyBindings } from "./hooks/useKeyBindings.js";
 import { useMouse } from "./hooks/useMouse.js";
@@ -31,7 +32,8 @@ type Action =
   | { type: "SET_STATE"; payload: Partial<AppState> }
   | { type: "NAVIGATE"; idx: number }
   | { type: "SET_ENTRIES"; all: Entry[]; filtered: Entry[] }
-  | { type: "SET_PREVIEW"; payload: PreviewPayload; requestId: number; cacheKey: string }
+  | { type: "SET_PREVIEW"; payload: PreviewPayload; requestId: number }
+  | { type: "SET_PREVIEW_STAGED"; payload: PreviewPayload; requestId: number }
   | { type: "SET_GIT_STATUS"; cwd: string; status: Map<string, string> | null }
   | { type: "RESIZE"; width: number; height: number };
 
@@ -45,7 +47,20 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, allEntries: action.all, entries: action.filtered };
     case "SET_PREVIEW":
       if (action.requestId !== state.requestId) return state;
-      cacheSet(action.cacheKey, action.payload);
+      return {
+        ...state,
+        preview: action.payload.text,
+        previewLineCount: action.payload.lineCount,
+        previewTokenEstimate: action.payload.tokenEstimate,
+        previewTruncated: action.payload.truncated,
+        loading: false,
+      };
+    case "SET_PREVIEW_STAGED":
+      // Fast-path: plain text dispatched before the highlighted version is
+      // ready. Writes body + metrics but does NOT touch the cache — only the
+      // final (highlighted) dispatch writes the cache entry. Clears loading so
+      // the user can read the file while Shiki catches up.
+      if (action.requestId !== state.requestId) return state;
       return {
         ...state,
         preview: action.payload.text,
@@ -164,14 +179,93 @@ export function App({ startDir, cwdFile }: AppProps) {
   // ── helpers ──────────────────────────────────────────────────────────────
 
   const gitProcRef = useRef<ReturnType<typeof Bun.spawn> | null>(null);
-  const loadGit = useCallback(async (cwd: string) => {
+  const loadGit = useCallback(async (cwd: string, options?: { force?: boolean }) => {
     // Kill any in-flight git process before spawning a new one
     if (gitProcRef.current) {
       gitProcRef.current.kill();
       gitProcRef.current = null;
     }
-    const status = await loadGitStatus(cwd, gitProcRef);
+    const status = await loadGitStatus(cwd, gitProcRef, options);
     dispatch({ type: "SET_GIT_STATUS", cwd, status });
+  }, []);
+
+  // Refs for the debounced + cancelable preview pipeline.
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  // Rolling EMA of recent Shiki run times. Gates the fast-path so we only
+  // split renders in two when highlighting is actually slow — keeps fast
+  // hardware flicker-free.
+  const shikiMedianRef = useRef<number>(0);
+  const updateShikiMedian = (ms: number) => {
+    const prev = shikiMedianRef.current;
+    shikiMedianRef.current = prev === 0 ? ms : prev * 0.7 + ms * 0.3;
+  };
+
+  const cancelPendingPreview = () => {
+    if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (abortRef.current !== null) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+  };
+
+  // Actually runs the buildPreview pipeline and dispatches the result.
+  // Writes to cache on success (moved out of the reducer). Respects
+  // AbortSignal — dispatches are gated on requestId equality in the reducer.
+  const runBuild = useCallback(async (
+    entry: Entry,
+    width: number,
+    height: number,
+    cacheKey: string,
+    rid: number,
+    signal: AbortSignal,
+    useFastPath: boolean,
+  ) => {
+    try {
+      if (useFastPath) {
+        // Stage 1: plain text, dispatched immediately for perceptibility on
+        // slow hardware. No cache write.
+        const plain = await buildPlainPreview(entry.path, signal);
+        if (signal.aborted) return;
+        if (plain) {
+          dispatch({ type: "SET_PREVIEW_STAGED", payload: plain, requestId: rid });
+        }
+      }
+
+      const t0 = performance.now();
+      const payload = await buildPreview(entry.path, width, height, signal);
+      const elapsed = performance.now() - t0;
+      if (signal.aborted) return;
+
+      // Track Shiki time approximation — for code files the bulk of the
+      // elapsed work is the highlight call. Good enough to gate the fast-path.
+      if (isExpensivePreview(entry.path)) {
+        updateShikiMedian(elapsed);
+      }
+
+      dispatch({ type: "SET_PREVIEW", payload, requestId: rid });
+      // Cache write lives here now rather than inside the reducer — the
+      // reducer's stale-check above still applies, so stale dispatches don't
+      // write. Only freshly-accepted payloads get cached.
+      if (rid === requestIdRef.current) {
+        cacheSet(cacheKey, payload);
+      }
+    } catch (e) {
+      if (signal.aborted) return;
+      dispatch({
+        type: "SET_PREVIEW",
+        payload: {
+          text: `preview error: ${(e as Error).message}`,
+          lineCount: 0,
+          tokenEstimate: 0,
+          truncated: false,
+        },
+        requestId: rid,
+      });
+    }
   }, []);
 
   const requestPreview = useCallback(async (
@@ -179,6 +273,7 @@ export function App({ startDir, cwdFile }: AppProps) {
   ) => {
     const s = stateRef.current;
     if (entries.length === 0 || selected >= entries.length) {
+      cancelPendingPreview();
       dispatch({ type: "SET_STATE", payload: { preview: "", loading: false } });
       return;
     }
@@ -190,11 +285,11 @@ export function App({ startDir, cwdFile }: AppProps) {
     const height = Math.max(8, bodyH);
     const key = previewKey(entry.path, entry.modTime, entry.size, width, height);
 
+    // Cache hit — dispatch synchronously. No debounce, no abort, no flicker.
+    // Rapid j/k through already-visited files stays instant.
     const cached = cacheGet(key);
     if (cached !== undefined) {
-      // Cache hit — dispatch synchronously with the new payload. Because we
-      // never clear the stale preview in this branch, rapid j/k through
-      // already-visited files is flash-free.
+      cancelPendingPreview();
       dispatch({
         type: "SET_STATE",
         payload: {
@@ -208,40 +303,66 @@ export function App({ startDir, cwdFile }: AppProps) {
       return;
     }
 
-    // Cache miss — clear the stale preview body and metrics now so the user
-    // sees a "loading…" state on the new file instead of the previous file's
-    // content sitting under the new filename in the header.
+    // Cache miss — abort anything in flight and start the new request.
+    cancelPendingPreview();
     requestIdRef.current++;
     const rid = requestIdRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const expensive = isExpensivePreview(entry.path);
+
+    // Cheap previewers (json/csv/hex/directory/plain text) skip debounce
+    // entirely — they're already fast and search-as-you-type would lag
+    // otherwise. Clear stale body + show loading so the UI reflects the new
+    // file immediately.
+    if (!expensive) {
+      dispatch({
+        type: "SET_STATE",
+        payload: {
+          preview: "",
+          previewLineCount: 0,
+          previewTokenEstimate: 0,
+          previewTruncated: false,
+          loading: true,
+          requestId: rid,
+        },
+      });
+      await runBuild(entry, width, height, key, rid, controller.signal, false);
+      return;
+    }
+
+    // Expensive previewer: hold the stale preview body visible for the
+    // debounce window (no blank flash), then fire the real pipeline. The
+    // shared requestId lets rapid navigation cancel in-flight work.
     dispatch({
       type: "SET_STATE",
       payload: {
-        preview: "",
-        previewLineCount: 0,
-        previewTokenEstimate: 0,
-        previewTruncated: false,
         loading: true,
         requestId: rid,
       },
     });
 
-    try {
-      const payload = await buildPreview(entry.path, width, height);
-      dispatch({ type: "SET_PREVIEW", payload, requestId: rid, cacheKey: key });
-    } catch (e) {
+    const useFastPath = !FAST_MODE && shikiMedianRef.current > SHIKI_FAST_PATH_THRESHOLD_MS;
+
+    debounceTimerRef.current = setTimeout(async () => {
+      debounceTimerRef.current = null;
+      if (controller.signal.aborted) return;
+      // Clear stale body now that the debounce has committed.
       dispatch({
-        type: "SET_PREVIEW",
+        type: "SET_STATE",
         payload: {
-          text: `preview error: ${(e as Error).message}`,
-          lineCount: 0,
-          tokenEstimate: 0,
-          truncated: false,
+          preview: "",
+          previewLineCount: 0,
+          previewTokenEstimate: 0,
+          previewTruncated: false,
+          loading: true,
+          requestId: rid,
         },
-        requestId: rid,
-        cacheKey: key,
       });
-    }
-  }, []);
+      await runBuild(entry, width, height, key, rid, controller.signal, useFastPath);
+    }, PREVIEW_DEBOUNCE_MS);
+  }, [runBuild]);
 
   const navigate = useCallback((idx: number) => {
     dispatch({ type: "NAVIGATE", idx });
@@ -514,7 +635,7 @@ export function App({ startDir, cwdFile }: AppProps) {
         const filtered = await reloadDir();
         dispatch({ type: "SET_STATE", payload: { status: "reloaded" } });
         if (filtered) requestPreview(filtered, stateRef.current.selected);
-        loadGit(s.cwd);
+        loadGit(s.cwd, { force: true });
         return;
       }
 
@@ -581,7 +702,10 @@ export function App({ startDir, cwdFile }: AppProps) {
 
     const filtered = await reloadDir();
     if (filtered) requestPreview(filtered, stateRef.current.selected);
-  }, [reloadDir, requestPreview]);
+    // Tree changed on disk — force-refresh git status so badges on the
+    // surrounding files don't show the pre-delete state.
+    loadGit(stateRef.current.cwd, { force: true });
+  }, [reloadDir, requestPreview, loadGit]);
 
   // Register key handler
   useKeyBindings(handleKey);
@@ -614,8 +738,10 @@ export function App({ startDir, cwdFile }: AppProps) {
         const delta = direction === "down" ? 1 : -1;
         const newSel = Math.max(0, Math.min(s.selected + delta, s.entries.length - 1));
         if (newSel !== s.selected) {
-          dispatch({ type: "NAVIGATE", idx: newSel });
-          requestPreview(s.entries, newSel);
+          // Route through navigate() so wheel scrolling honors the same
+          // debounce + abort machinery as keyboard nav. Without this, holding
+          // the scroll wheel would fire unbounded buildPreview calls.
+          navigate(newSel);
         }
       }
       return;
@@ -683,7 +809,7 @@ export function App({ startDir, cwdFile }: AppProps) {
         .then(() => dispatch({ type: "SET_STATE", payload: { status: `copied ${text.length} chars` } }))
         .catch((e) => dispatch({ type: "SET_STATE", payload: { status: `copy failed: ${(e as Error).message}` } }));
     }
-  }, [requestPreview]);
+  }, [navigate]);
 
   useMouse(handleMouse);
 

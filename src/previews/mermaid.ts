@@ -1,11 +1,24 @@
 import chalk from "chalk";
 import { colors } from "../theme.js";
 
+// Memoize the `which mmdc` lookup — the sync subprocess used to run on every
+// mermaid preview, blocking the event loop. One hit per session now.
+let mmdcAvailable: boolean | null = null;
+
+function hasMmdc(): boolean {
+  if (mmdcAvailable === null) {
+    try {
+      mmdcAvailable = Bun.spawnSync(["which", "mmdc"]).exitCode === 0;
+    } catch {
+      mmdcAvailable = false;
+    }
+  }
+  return mmdcAvailable;
+}
+
 export async function renderMermaid(text: string): Promise<string> {
-  // Try mmdc CLI if available
   try {
-    const which = Bun.spawnSync(["which", "mmdc"]);
-    if (which.exitCode === 0) {
+    if (hasMmdc()) {
       const proc = Bun.spawn(
         ["mmdc", "-i", "/dev/stdin", "-o", "/dev/stdout", "-e", "txt"],
         { stdin: "pipe", stdout: "pipe", stderr: "ignore" },
