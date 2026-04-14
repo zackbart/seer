@@ -47,8 +47,18 @@ jobs:
       - name: Build binary
         run: bun build --compile --target=${{ matrix.target }} src/index.tsx --outfile seer
 
-      - name: Smoke test (native Linux builds only)
-        if: runner.os == 'Linux' && !contains(matrix.target, 'arm64')
+      # macOS 26+ kernel refuses to load unsigned arm64 binaries (SIGKILL at
+      # exec time with `load code signature error 4`). Ad-hoc sign here so the
+      # shipped tarball always has a valid signature, independent of whether
+      # the current Bun version signs `--compile` output.
+      - name: Ad-hoc codesign (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --sign - seer
+          codesign -v seer
+
+      - name: Smoke test (native Linux + macOS arm64)
+        if: (runner.os == 'Linux' && !contains(matrix.target, 'arm64')) || matrix.target == 'bun-darwin-arm64'
         run: ./seer --version && ./seer --help
 
       - name: Package tarball
