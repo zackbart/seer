@@ -7,7 +7,7 @@ import { App } from "./App.js";
 // Ensure true-color support for chalk (used by preview renderers)
 if (chalk.level < 3) chalk.level = 3;
 
-const version = "1.0.11";
+const version = "1.0.12";
 
 function printHelp() {
   console.log(`seer ${version}`);
