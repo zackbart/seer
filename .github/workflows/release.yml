@@ -13,15 +13,17 @@ jobs:
     strategy:
       matrix:
         include:
-          # darwin builds run on native-arch macOS runners with no --target,
-          # because Bun only ad-hoc signs `--compile` output when it's building
-          # for the host. Cross-compiled macOS binaries ship unsigned, and
-          # macOS 26+ kernels SIGKILL them at load time.
+          # darwin-arm64 builds natively on macos-14 with no --target so that
+          # Bun ad-hoc signs the `--compile` output. Unsigned arm64 binaries
+          # get SIGKILL'd at load by macOS 26+ kernels. darwin-amd64 is
+          # cross-compiled from ubuntu — GitHub-hosted Intel macOS runners are
+          # deprecated, and Intel Macs (macOS ≤15) don't enforce signatures
+          # strictly, so the cross-compiled unsigned binary still runs.
           - os: macos-14
             target: ""
             artifact: seer_darwin_arm64
-          - os: macos-13
-            target: ""
+          - os: ubuntu-latest
+            target: bun-darwin-x64
             artifact: seer_darwin_amd64
           - os: ubuntu-latest
             target: bun-linux-x64
