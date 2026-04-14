@@ -13,11 +13,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: macos-latest
-            target: bun-darwin-arm64
+          # darwin builds run on native-arch macOS runners with no --target,
+          # because Bun only ad-hoc signs `--compile` output when it's building
+          # for the host. Cross-compiled macOS binaries ship unsigned, and
+          # macOS 26+ kernels SIGKILL them at load time.
+          - os: macos-14
+            target: ""
             artifact: seer_darwin_arm64
-          - os: macos-latest
-            target: bun-darwin-x64
+          - os: macos-13
+            target: ""
             artifact: seer_darwin_amd64
           - os: ubuntu-latest
             target: bun-linux-x64
@@ -45,20 +49,26 @@ jobs:
         run: bun run typecheck
 
       - name: Build binary
-        run: bun build --compile --target=${{ matrix.target }} src/index.tsx --outfile seer
+        run: |
+          if [ -z "${{ matrix.target }}" ]; then
+            bun build --compile src/index.tsx --outfile seer
+          else
+            bun build --compile --target=${{ matrix.target }} src/index.tsx --outfile seer
+          fi
 
       # macOS 26+ kernel refuses to load unsigned arm64 binaries (SIGKILL at
-      # exec time with `load code signature error 4`). Ad-hoc sign here so the
-      # shipped tarball always has a valid signature, independent of whether
-      # the current Bun version signs `--compile` output.
+      # exec time with `load code signature error 4`). Bun auto-signs native
+      # `--compile` output; this step re-signs ad-hoc as a belt-and-suspenders
+      # guard so a future Bun that skips signing would still produce a valid
+      # tarball — and it also verifies the signature.
       - name: Ad-hoc codesign (macOS)
         if: runner.os == 'macOS'
         run: |
           codesign --force --sign - seer
           codesign -v seer
 
-      - name: Smoke test (native Linux + macOS arm64)
-        if: (runner.os == 'Linux' && !contains(matrix.target, 'arm64')) || matrix.target == 'bun-darwin-arm64'
+      - name: Smoke test (native builds)
+        if: runner.os == 'macOS' || (runner.os == 'Linux' && !contains(matrix.target, 'arm64'))
         run: ./seer --version && ./seer --help
 
       - name: Package tarball
