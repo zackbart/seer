@@ -19,6 +19,7 @@ let csvMod: Promise<typeof import("./csv.js")> | null = null;
 let hexMod: Promise<typeof import("./hex.js")> | null = null;
 let archiveMod: Promise<typeof import("./archive.js")> | null = null;
 let mermaidMod: Promise<typeof import("./mermaid.js")> | null = null;
+let htmlMod: Promise<typeof import("./html.js")> | null = null;
 let docxMod: Promise<typeof import("./docx.js")> | null = null;
 let xlsxMod: Promise<typeof import("./xlsx.js")> | null = null;
 let pdfMod: Promise<typeof import("./pdf.js")> | null = null;
@@ -31,6 +32,7 @@ const loadCsv = () => (csvMod ??= import("./csv.js"));
 const loadHex = () => (hexMod ??= import("./hex.js"));
 const loadArchive = () => (archiveMod ??= import("./archive.js"));
 const loadMermaid = () => (mermaidMod ??= import("./mermaid.js"));
+const loadHtml = () => (htmlMod ??= import("./html.js"));
 const loadDocx = () => (docxMod ??= import("./docx.js"));
 const loadXlsx = () => (xlsxMod ??= import("./xlsx.js"));
 const loadPdf = () => (pdfMod ??= import("./pdf.js"));
@@ -64,7 +66,7 @@ const CODE_HIGHLIGHT_EXTS = new Set([
   "sh", "bash", "zsh", "fish", "ps1", "psm1",
   "yaml", "yml", "toml", "xml", "svg", "plist", "ini", "conf", "cfg",
   "sql", "graphql", "gql", "css", "scss", "sass", "less",
-  "html", "htm", "svelte", "vue", "dockerfile",
+  "svelte", "vue", "dockerfile",
   "r", "dart", "zig", "nix", "tf", "tfvars", "proto",
 ]);
 
@@ -74,6 +76,7 @@ export function isExpensivePreview(filePath: string): boolean {
   if (officeExts.has(ext) || pdfExts.has(ext)) return true;
   if (ext === ".md" || ext === ".markdown" || ext === ".mdx") return true;
   if (ext === ".mmd" || ext === ".mermaid") return true;
+  if (ext === ".html" || ext === ".htm" || ext === ".xhtml") return true;
   if (archiveExts.has(ext)) return true;
   const bare = ext.startsWith(".") ? ext.slice(1) : ext;
   return CODE_HIGHLIGHT_EXTS.has(bare);
@@ -218,6 +221,18 @@ export async function buildPreview(
         if (aborted(signal)) return emptyMetrics("");
         return withMetrics(await renderMermaid(text), metricSource, truncated);
       }
+      case ".html":
+      case ".htm":
+      case ".xhtml": {
+        if (FAST_MODE) {
+          return emptyMetrics(
+            `${path.basename(filePath)}\nsize: ${humanSize(stat.size)}\n\n(html preview disabled in fast mode — unset SEER_FAST_MODE to enable)`,
+          );
+        }
+        const { renderHtml } = await loadHtml();
+        if (aborted(signal)) return emptyMetrics("");
+        return withMetrics(renderHtml(text, width, truncated), metricSource, truncated);
+      }
       case ".json":
       case ".jsonc": {
         const { renderJSONPreview } = await loadJson();
@@ -265,6 +280,9 @@ export async function buildPlainPreview(
   signal?: AbortSignal,
 ): Promise<PreviewPayload | null> {
   if (aborted(signal)) return null;
+  // HTML doesn't stage well — raw source is noisier than a brief delay.
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".html" || ext === ".htm" || ext === ".xhtml") return null;
   try {
     const stat = await fsp.stat(filePath);
     if (aborted(signal) || stat.isDirectory()) return null;

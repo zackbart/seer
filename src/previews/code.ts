@@ -212,8 +212,6 @@ function extToLang(ext: string): string {
     scss: "scss",
     sass: "scss",
     less: "less",
-    html: "html",
-    htm: "html",
     svelte: "svelte",
     vue: "vue",
     dockerfile: "dockerfile",

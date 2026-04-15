@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.13.
+Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.14.
 
 ## Tech Stack
 
@@ -11,6 +11,7 @@ Seer is a TypeScript/React TUI file browser with a two-pane layout (directory li
 - **Shiki (`shiki/core` + JS regex engine)** — syntax highlighting (nord theme). Uses `createHighlighterCore` with explicit per-grammar dynamic imports from `@shikijs/langs/*` rather than the full `shiki` package, so only the languages a user actually opens ever get materialized.
 - **Chalk** — terminal color support
 - **Marked + marked-terminal** — Markdown rendering (lazy-loaded)
+- **turndown** — HTML→Markdown conversion, reused by the HTML previewer (lazy-loaded)
 - **mammoth** — `.docx` text extraction (lazy-loaded)
 - **exceljs** — `.xlsx` parsing (lazy-loaded)
 - **unpdf** — PDF text extraction, pdfjs-dist wrapper, Bun-friendly (lazy-loaded)
@@ -41,6 +42,7 @@ All source code lives in `src/`, organized as:
 | `src/previews/index.ts` | Preview dispatcher — dynamic-imports each previewer on first use, threads `AbortSignal` through the pipeline, applies `SEER_FAST_MODE` guards. Also exports `buildPlainPreview` (fast-path stage 1) and `isExpensivePreview` classifier. |
 | `src/previews/code.ts` | Shiki syntax highlighting |
 | `src/previews/markdown.ts` | Markdown rendering |
+| `src/previews/html.ts` | HTML rendering — turndown → markdown.ts pipeline, strips `<script>/<style>/<noscript>` |
 | `src/previews/json.ts` | Colorized JSON |
 | `src/previews/csv.ts` | Table-formatted CSV/TSV (exports shared `renderRowsAsTable`) |
 | `src/previews/directory.ts` | Directory listing preview |

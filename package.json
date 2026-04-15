@@ -1,6 +1,6 @@
 {
   "name": "seer",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "TUI file browser with live preview",
   "type": "module",
   "main": "src/index.tsx",
@@ -21,11 +21,14 @@
     "react-devtools-core": "^7.0.1",
     "shiki": "^3.2.0",
     "string-width": "^7.2.0",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
     "unpdf": "^1.4.0"
   },
   "devDependencies": {
+    "@types/bun": "latest",
     "@types/react": "^18.3.0",
-    "typescript": "^5.7.0",
-    "@types/bun": "latest"
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5.7.0"
   }
 }

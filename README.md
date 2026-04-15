@@ -12,7 +12,7 @@ Two panes: directory listing on the left, instant file preview on the right. Tha
 
 - Two-pane layout with live file preview
 - Syntax-highlighted code previews (Shiki, nord theme)
-- Styled Markdown rendering with ANSI-aware word wrapping
+- Styled Markdown and HTML rendering with ANSI-aware word wrapping
 - Preview header shows `size · lines · ~tokens · modified` at a glance
 - Native Mermaid diagram preview (sequence, flowchart)
 - JSON pretty-printing with color
@@ -110,12 +110,12 @@ Press `t` to cycle through themes. Your choice is saved to `~/.config/seer/theme
 | Variable | Effect |
 |---|---|
 | `SEER_NO_NERD_FONT=1` | Use plain Unicode instead of Nerd Font glyphs |
-| `SEER_FAST_MODE=1` | Low-power mode: disables syntax highlighting, markdown rendering, and office/PDF parsers; shrinks the preview byte cap; raises the nav debounce. Use on Raspberry Pi, older laptops, or slow SSH connections. A `[fast]` badge appears in the status line while enabled. |
+| `SEER_FAST_MODE=1` | Low-power mode: disables syntax highlighting, markdown/HTML rendering, and office/PDF parsers; shrinks the preview byte cap; raises the nav debounce. Use on Raspberry Pi, older laptops, or slow SSH connections. A `[fast]` badge appears in the status line while enabled. |
 
 ## Supported Formats
 
 - **Code**: Go, JS/TS, Python, Rust, C/C++, Ruby, Java, and many more (via Shiki)
-- **Markup**: Markdown, MDX, RST
+- **Markup**: Markdown, MDX, RST, HTML (rendered via turndown → marked-terminal)
 - **Data**: JSON, YAML, TOML, CSV, TSV, INI, ENV
 - **Office**: Word (`.docx`), Excel (`.xlsx`), PDF — text extraction with table rendering for spreadsheets
 - **Diagrams**: Mermaid (`.mmd`)
