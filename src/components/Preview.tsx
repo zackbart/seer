@@ -47,13 +47,12 @@ export function Preview({ state, width, height }: Props) {
       try { process.stdout.write(out); } catch {}
     };
     // Ink throttles stdout at 32ms with a trailing-edge flush that overwrites
-    // our placeholders after React's commit. Schedule a follow-up after the
-    // throttle window, plus a longer safety emit in case two renders coalesce
-    // and push Ink's flush further out.
+    // our placeholders after React's commit. Aggressive schedule: several
+    // emits in the first 100ms to catch Ink's flush within one throttle
+    // window, plus safety emits at 200/400ms for coalesced renders.
     emit();
-    const t1 = setTimeout(emit, 50);
-    const t2 = setTimeout(emit, 150);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    const timers = [15, 40, 80, 150, 250, 500].map((ms) => setTimeout(emit, ms));
+    return () => { for (const t of timers) clearTimeout(t); };
   });
 
   // ── header row ─────────────────────────────────────────────────────

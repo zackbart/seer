@@ -24,10 +24,46 @@ import { humanSize } from "../utils/humanSize.js";
 import {
   detectImageProtocol,
   buildKittyTransmit,
+  buildKittyDelete,
   buildPlaceholderGrid,
   MAX_GRID_DIMENSION,
 } from "../utils/termGraphics.js";
 import { assignId } from "../hooks/useImageRegistry.js";
+
+// ── transcoded-PNG byte cache ──────────────────────────────────────────────
+//
+// Non-PNG sources (JPEG/GIF/WebP) go through Jimp.read + getBuffer("image/png")
+// — 100–500ms on the main thread. The preview cache is keyed on path+size+
+// width+height, so a pane or terminal resize invalidates it and re-runs the
+// whole pipeline. This module-level cache remembers the transcoded PNG bytes
+// independently of pane dimensions, so resize skips the Jimp pass on known
+// inputs. PNG sources already bypass Jimp (see below) and therefore never
+// populate this cache.
+//
+// Bounded LRU via Map insertion order. 8 entries is enough for common
+// workflows (screenshots folder, small batch of JPEGs).
+const PNG_CACHE_MAX = 8;
+interface PngCacheEntry { png: Buffer; width: number; height: number; }
+const pngCache = new Map<string, PngCacheEntry>();
+
+function pngCacheGet(key: string): PngCacheEntry | undefined {
+  const v = pngCache.get(key);
+  if (v === undefined) return undefined;
+  // Promote on hit.
+  pngCache.delete(key);
+  pngCache.set(key, v);
+  return v;
+}
+
+function pngCacheSet(key: string, entry: PngCacheEntry): void {
+  if (pngCache.has(key)) pngCache.delete(key);
+  pngCache.set(key, entry);
+  while (pngCache.size > PNG_CACHE_MAX) {
+    const oldest = pngCache.keys().next().value;
+    if (oldest === undefined) break;
+    pngCache.delete(oldest);
+  }
+}
 
 // Reject absurdly large declared dimensions before decoding — a crafted small
 // PNG can claim 50k×50k pixels and OOM jimp.
@@ -102,17 +138,31 @@ async function renderKittyPlaceholder(
   if (signal?.aborted) return okPayload("");
 
   // Transcode to PNG if the file isn't already PNG. Kitty `f=100` is PNG-only.
+  // Cache transcoded bytes across pane/terminal resizes — the preview cache
+  // key includes width/height so resize invalidates it, but the PNG bytes
+  // themselves don't depend on placement geometry.
+  const fileKey = `${filePath}|${modTimeMs}|${size}`;
   let pngBuffer: Buffer;
   if (ext === ".png") {
     pngBuffer = buffer;
   } else {
-    const img = await Jimp.read(buffer);
-    if (signal?.aborted) return okPayload("");
-    pngBuffer = await img.getBuffer("image/png");
-    if (imageW === 0 || imageH === 0) {
-      imageW = img.width;
-      imageH = img.height;
-      if (imageW * imageH > MAX_PIXELS) return null;
+    const cached = pngCacheGet(fileKey);
+    if (cached) {
+      pngBuffer = cached.png;
+      if (imageW === 0 || imageH === 0) {
+        imageW = cached.width;
+        imageH = cached.height;
+      }
+    } else {
+      const img = await Jimp.read(buffer);
+      if (signal?.aborted) return okPayload("");
+      pngBuffer = await img.getBuffer("image/png");
+      if (imageW === 0 || imageH === 0) {
+        imageW = img.width;
+        imageH = img.height;
+        if (imageW * imageH > MAX_PIXELS) return null;
+      }
+      pngCacheSet(fileKey, { png: pngBuffer, width: img.width, height: img.height });
     }
   }
 
@@ -125,13 +175,18 @@ async function renderKittyPlaceholder(
   const maxRows = Math.min(usableRows, MAX_GRID_DIMENSION);
   const { cols, rows } = fitToCells(imageW, imageH, maxCols, maxRows);
 
-  const key = `${filePath}|${modTimeMs}|${size}`;
-  const { id, isNew } = assignId(key);
+  const { id, needsTransmit, wasNewId } = assignId(fileKey, cols, rows);
 
   const gridRows = buildPlaceholderGrid(id, cols, rows);
-  const transmitEscape = isNew
-    ? buildKittyTransmit(pngBuffer, id, cols, rows)
-    : undefined;
+  // On geometry change for an existing id, delete-first then re-transmit.
+  // Kitty's `a=T` reusing an id replaces the pixel data, but whether it also
+  // updates the virtual placement (c, r) is terminal-defined. Delete-first
+  // guarantees a clean reset and costs ~20 bytes on the wire.
+  let transmitEscape: string | undefined;
+  if (needsTransmit) {
+    const transmit = buildKittyTransmit(pngBuffer, id, cols, rows);
+    transmitEscape = wasNewId ? transmit : buildKittyDelete(id) + transmit;
+  }
 
   return {
     text: "",

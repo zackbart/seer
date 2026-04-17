@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.15.
+Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.16.
 
 ## Tech Stack
 

@@ -293,6 +293,10 @@ export function App({ startDir, cwdFile }: AppProps) {
     const cached = cacheGet(key);
     if (cached !== undefined) {
       cancelPendingPreview();
+      // Bump requestId so any in-flight build from a prior navigation can't
+      // pass the stale-check in the reducer and overwrite this hit.
+      requestIdRef.current++;
+      const rid = requestIdRef.current;
       dispatch({
         type: "SET_STATE",
         payload: {
@@ -302,6 +306,7 @@ export function App({ startDir, cwdFile }: AppProps) {
           previewTruncated: cached.truncated,
           previewImage: cached.image ?? null,
           loading: false,
+          requestId: rid,
         },
       });
       return;
@@ -315,11 +320,11 @@ export function App({ startDir, cwdFile }: AppProps) {
     abortRef.current = controller;
 
     const expensive = isExpensivePreview(entry.path);
+    const isImageTarget = imageExts.has(path.extname(entry.path).toLowerCase());
 
-    // Cheap previewers (json/csv/hex/directory/plain text) skip debounce
-    // entirely — they're already fast and search-as-you-type would lag
-    // otherwise. Clear stale body + show loading so the UI reflects the new
-    // file immediately.
+    // Cheap previewers (json/csv/hex/directory/plain text): skip debounce
+    // AND clear the body immediately — their build takes <20ms so the blank
+    // window is imperceptible, and clearing avoids showing stale content.
     if (!expensive) {
       dispatch({
         type: "SET_STATE",
@@ -328,6 +333,26 @@ export function App({ startDir, cwdFile }: AppProps) {
           previewLineCount: 0,
           previewTokenEstimate: 0,
           previewTruncated: false,
+          previewImage: null,
+          loading: true,
+          requestId: rid,
+        },
+      });
+      await runBuild(entry, width, height, key, rid, controller.signal, false);
+      return;
+    }
+
+    // Image targets: skip debounce AND keep the previous image visible until
+    // SET_PREVIEW replaces it. The decode+transmit window is 100–500ms; a
+    // blank flash in that window is what users perceive as "slow/weird."
+    // Side effect: the new file's header (filename) appears over the old
+    // image for a fraction of a second — acceptable tradeoff for smooth
+    // nav. Previous code (code/markdown/pdf/etc.) already does this during
+    // the debounce window.
+    if (isImageTarget) {
+      dispatch({
+        type: "SET_STATE",
+        payload: {
           loading: true,
           requestId: rid,
         },
@@ -339,27 +364,12 @@ export function App({ startDir, cwdFile }: AppProps) {
     // Expensive previewer: hold the stale preview body visible for the
     // debounce window (no blank flash), then fire the real pipeline. The
     // shared requestId lets rapid navigation cancel in-flight work.
-    //
-    // Exception: images. Showing the previous image under the new file's
-    // header and filename is more disorienting than a brief blank — clear
-    // the body synchronously for image targets.
-    const isImageTarget = imageExts.has(path.extname(entry.path).toLowerCase());
     dispatch({
       type: "SET_STATE",
-      payload: isImageTarget
-        ? {
-            preview: "",
-            previewLineCount: 0,
-            previewTokenEstimate: 0,
-            previewTruncated: false,
-            previewImage: null,
-            loading: true,
-            requestId: rid,
-          }
-        : {
-            loading: true,
-            requestId: rid,
-          },
+      payload: {
+        loading: true,
+        requestId: rid,
+      },
     });
 
     const useFastPath = !FAST_MODE && shikiMedianRef.current > SHIKI_FAST_PATH_THRESHOLD_MS;
