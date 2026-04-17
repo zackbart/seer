@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { render } from "ink";
 import path from "path";
 import { App } from "./App.js";
+import { buildKittyDeleteAll, hasTransmittedAny } from "./utils/termGraphics.js";
 
 // Ensure true-color support for chalk (used by preview renderers)
 if (chalk.level < 3) chalk.level = 3;
@@ -90,6 +91,11 @@ process.stdout.write("\x1b[?1006h"); // enable SGR extended mouse mode
 
 // Clean up on exit
 function cleanup() {
+  // Free any Kitty graphics we uploaded this session. Guarded so we don't
+  // emit a bogus APC on terminals that never saw one.
+  if (hasTransmittedAny()) {
+    process.stdout.write(buildKittyDeleteAll());
+  }
   process.stdout.write("\x1b[?1006l"); // disable SGR mouse
   process.stdout.write("\x1b[?1002l"); // disable cell-motion
   process.stdout.write("\x1b[?1000l"); // disable mouse reporting

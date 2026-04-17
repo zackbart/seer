@@ -60,6 +60,34 @@ export function Preview({ state, width, height }: Props) {
 
   // ── body ───────────────────────────────────────────────────────────
   const bodyH = Math.max(1, innerH - 2);
+
+  // Kitty-placeholder image path: render the grid rows as direct <Text>
+  // children, bypassing computeWrappedBody (the U+10EEEE placeholder char
+  // and its combining diacritics confuse visual-width measurement, and the
+  // grid is already sized to the pane). No scroll indicators, no selection.
+  if (state.previewImage) {
+    const gridRows = state.previewImage.gridRows.slice(0, bodyH);
+    for (let i = 0; i < bodyH; i++) {
+      const row = i < gridRows.length ? gridRows[i] : "";
+      rows.push(
+        <Box key={`slot-${slot++}`} width={innerW} height={1} overflow="hidden">
+          <Text wrap="truncate-end">{row || " "}</Text>
+        </Box>,
+      );
+    }
+    return (
+      <Box
+        flexDirection="column"
+        width={width}
+        height={height}
+        borderStyle="round"
+        borderColor={colors.border}
+      >
+        {rows}
+      </Box>
+    );
+  }
+
   let previewBody = state.preview;
   if (!previewBody && !state.loading) previewBody = "  no preview";
   if (state.loading && !previewBody) previewBody = "  loading…";

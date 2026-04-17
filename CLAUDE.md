@@ -15,6 +15,8 @@ Seer is a TypeScript/React TUI file browser with a two-pane layout (directory li
 - **mammoth** — `.docx` text extraction (lazy-loaded)
 - **exceljs** — `.xlsx` parsing (lazy-loaded)
 - **unpdf** — PDF text extraction, pdfjs-dist wrapper, Bun-friendly (lazy-loaded)
+- **terminal-image + jimp** — image half-block rasterization (fallback path, lazy-loaded)
+- **supports-terminal-graphics** — Kitty/iTerm2 graphics protocol detection
 
 ## Build & Run
 
@@ -52,6 +54,9 @@ All source code lives in `src/`, organized as:
 | `src/previews/docx.ts` | `.docx` text extraction via mammoth |
 | `src/previews/xlsx.ts` | `.xlsx` table rendering via exceljs |
 | `src/previews/pdf.ts` | PDF text extraction via unpdf |
+| `src/previews/image.ts` | Image preview: Kitty-placeholder path (pixel-perfect) or half-block fallback via terminal-image |
+| `src/utils/termGraphics.ts` | Kitty graphics protocol helpers: protocol detection, APC transmit chunker, unicode-placeholder grid builder (U+10EEEE + diacritic coords + 256-color-fg id), delete escapes |
+| `src/hooks/useImageRegistry.ts` | Registry of live terminal-graphics image ids (1..255); lifetime bound to the preview cache so eviction frees terminal-side storage |
 | `src/hooks/useMouse.ts` | Mouse event parsing (SGR protocol) |
 | `src/hooks/useKeyBindings.ts` | Keyboard input handler |
 | `src/hooks/usePreviewCache.ts` | LRU preview cache |
@@ -108,6 +113,7 @@ All source code lives in `src/`, organized as:
 |---|---|
 | `SEER_NO_NERD_FONT=1` | Use plain Unicode instead of Nerd Font glyphs |
 | `SEER_FAST_MODE=1` | Low-power mode: disables Shiki, markdown rendering, and office/PDF parsers (replaces with size-only placeholder); shrinks `MAX_PREVIEW_BYTES` to 64KB; raises debounce to 150ms; shows `[fast]` badge in the status line. Opt-in for slow CPUs / SSH over slow links. |
+| `SEER_IMAGE_PROTOCOL` | Image rendering protocol. `auto` (default) uses Kitty graphics on Ghostty/Kitty/WezTerm (detected via `supports-terminal-graphics`), falls back to half-blocks. `kitty` forces Kitty-placeholder. `blocks` forces half-blocks. `iterm` is reserved and currently degrades to blocks — iTerm2 inline images can't re-emit on Ink rerenders, so they'd get overdrawn on every state change; half-blocks on iTerm2 already look great. `off` renders a size-only placeholder. TMUX disables Kitty auto-detection (no passthrough). Kitty path shows a `[kitty]` badge in the status line. |
 
 ## Landing the Plane (Session Completion)
 

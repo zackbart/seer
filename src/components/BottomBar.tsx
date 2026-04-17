@@ -90,6 +90,9 @@ export function BottomBar({ state, width }: Props) {
   if (FAST_MODE) {
     statusLeft.push({ text: "  [fast]", color: colors.accent, bold: true });
   }
+  if (state.previewImage?.protocol === "kitty-placeholder") {
+    statusLeft.push({ text: "  [kitty]", color: colors.accent, bold: true });
+  }
 
   // ── hints row ──────────────────────────────────────────────────────────
   let hints: Hint[];

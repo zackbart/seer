@@ -18,6 +18,7 @@ import { copyToClipboard } from "./utils/clipboard.js";
 import { openInNewTab } from "./utils/openInTerminal.js";
 import { buildPreview, buildPlainPreview, isExpensivePreview } from "./previews/index.js";
 import { imageExts } from "./theme.js";
+import { markTransmitted } from "./utils/termGraphics.js";
 import { cacheGet, cacheSet } from "./hooks/usePreviewCache.js";
 import { useKeyBindings } from "./hooks/useKeyBindings.js";
 import { useMouse } from "./hooks/useMouse.js";
@@ -54,6 +55,7 @@ function reducer(state: AppState, action: Action): AppState {
         previewLineCount: action.payload.lineCount,
         previewTokenEstimate: action.payload.tokenEstimate,
         previewTruncated: action.payload.truncated,
+        previewImage: action.payload.image ?? null,
         loading: false,
       };
     case "SET_PREVIEW_STAGED":
@@ -68,6 +70,7 @@ function reducer(state: AppState, action: Action): AppState {
         previewLineCount: action.payload.lineCount,
         previewTokenEstimate: action.payload.tokenEstimate,
         previewTruncated: action.payload.truncated,
+        previewImage: action.payload.image ?? null,
         loading: false,
       };
     case "SET_GIT_STATUS":
@@ -130,6 +133,7 @@ function createInitialState(cwd: string): AppState {
     previewSelecting: false,
     previewSelStart: { x: 0, y: 0 },
     previewSelEnd: { x: 0, y: 0 },
+    previewImage: null,
   };
 }
 
@@ -247,12 +251,28 @@ export function App({ startDir, cwdFile }: AppProps) {
         updateShikiMedian(elapsed);
       }
 
-      dispatch({ type: "SET_PREVIEW", payload, requestId: rid });
+      // Terminal-graphics one-shot: emit the Kitty transmit APC before the
+      // dispatch so the terminal has the pixels ready by the time Preview
+      // renders the placeholder grid. Strip it from the cached payload —
+      // subsequent cache hits render the grid only; the image id is already
+      // alive terminal-side.
+      if (payload.transmitEscape) {
+        try {
+          process.stdout.write(payload.transmitEscape);
+          markTransmitted();
+        } catch {
+          // stdout closed — swallow.
+        }
+      }
+      const toCache: typeof payload = { ...payload };
+      delete toCache.transmitEscape;
+
+      dispatch({ type: "SET_PREVIEW", payload: toCache, requestId: rid });
       // Cache write lives here now rather than inside the reducer — the
       // reducer's stale-check above still applies, so stale dispatches don't
       // write. Only freshly-accepted payloads get cached.
       if (rid === requestIdRef.current) {
-        cacheSet(cacheKey, payload);
+        cacheSet(cacheKey, toCache);
       }
     } catch (e) {
       if (signal.aborted) return;
@@ -298,6 +318,7 @@ export function App({ startDir, cwdFile }: AppProps) {
           previewLineCount: cached.lineCount,
           previewTokenEstimate: cached.tokenEstimate,
           previewTruncated: cached.truncated,
+          previewImage: cached.image ?? null,
           loading: false,
         },
       });
@@ -349,6 +370,7 @@ export function App({ startDir, cwdFile }: AppProps) {
             previewLineCount: 0,
             previewTokenEstimate: 0,
             previewTruncated: false,
+            previewImage: null,
             loading: true,
             requestId: rid,
           }

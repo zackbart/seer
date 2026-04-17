@@ -123,7 +123,15 @@ export async function buildPreview(
       if (aborted(signal)) return emptyMetrics("");
       const { renderImagePreview } = await loadImage();
       if (aborted(signal)) return emptyMetrics("");
-      return await renderImagePreview(buffer, filePath, width, height, signal);
+      return await renderImagePreview(
+        buffer,
+        filePath,
+        stat.mtimeMs,
+        stat.size,
+        width,
+        height,
+        signal,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return emptyMetrics(

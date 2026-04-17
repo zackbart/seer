@@ -80,6 +80,11 @@ export interface AppState {
   previewSelecting: boolean;
   previewSelStart: { x: number; y: number };
   previewSelEnd: { x: number; y: number };
+
+  // Set when the current preview is a terminal-graphics image rather than
+  // text content. Preview.tsx renders gridRows directly and skips the wrap /
+  // scroll / selection paths.
+  previewImage: ImagePayload | null;
 }
 
 // ── preview payload ──────────────────────────────────────────────────────────
@@ -89,11 +94,41 @@ export interface PreviewPayload {
   lineCount: number;
   tokenEstimate: number;
   truncated: boolean;
+  // Present when the preview is a pixel-perfect terminal-graphics image.
+  // The `text` field is empty in this case — the grid is in `image.gridRows`
+  // and the preview body renders those rows directly, bypassing the wrap
+  // pipeline. `transmitEscape` is the one-shot APC payload that uploads the
+  // image data to the terminal; it's consumed once and stripped before the
+  // payload is cached.
+  image?: ImagePayload;
+  transmitEscape?: string;
+}
+
+export interface ImagePayload {
+  protocol: "kitty-placeholder";
+  id: number;
+  cols: number;
+  rows: number;
+  gridRows: string[];
 }
 
 // ── constants ────────────────────────────────────────────────────────────────
 
 export const FAST_MODE = process.env.SEER_FAST_MODE === "1";
+
+// Image rendering protocol override. `auto` (default) detects Kitty graphics
+// support via supports-terminal-graphics and falls back to half-blocks.
+// `blocks` forces half-blocks, `kitty` forces Kitty-placeholder (will render
+// garbage on terminals that don't support it), `off` renders a size-only
+// placeholder, `iterm` is reserved but not implemented (see CLAUDE.md).
+export type ImageProtocol = "auto" | "kitty" | "blocks" | "iterm" | "off";
+const rawImageProtocol = (process.env.SEER_IMAGE_PROTOCOL ?? "auto").toLowerCase();
+export const SEER_IMAGE_PROTOCOL: ImageProtocol =
+  rawImageProtocol === "kitty" ? "kitty" :
+  rawImageProtocol === "blocks" ? "blocks" :
+  rawImageProtocol === "iterm" ? "iterm" :
+  rawImageProtocol === "off" ? "off" :
+  "auto";
 
 export const MAX_PREVIEW_BYTES = FAST_MODE ? 64 * 1024 : 256 * 1024;
 export const MAX_DIR_PREVIEW = 40;
