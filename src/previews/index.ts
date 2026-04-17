@@ -23,6 +23,7 @@ let htmlMod: Promise<typeof import("./html.js")> | null = null;
 let docxMod: Promise<typeof import("./docx.js")> | null = null;
 let xlsxMod: Promise<typeof import("./xlsx.js")> | null = null;
 let pdfMod: Promise<typeof import("./pdf.js")> | null = null;
+let imageMod: Promise<typeof import("./image.js")> | null = null;
 
 const loadDirectory = () => (directoryMod ??= import("./directory.js"));
 const loadCode = () => (codeMod ??= import("./code.js"));
@@ -36,8 +37,10 @@ const loadHtml = () => (htmlMod ??= import("./html.js"));
 const loadDocx = () => (docxMod ??= import("./docx.js"));
 const loadXlsx = () => (xlsxMod ??= import("./xlsx.js"));
 const loadPdf = () => (pdfMod ??= import("./pdf.js"));
+const loadImage = () => (imageMod ??= import("./image.js"));
 
 const MAX_OFFICE_BYTES = 10 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 // ── payload helpers ─────────────────────────────────────────────────────────
 
@@ -74,6 +77,7 @@ export function isExpensivePreview(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   if (!ext) return false;
   if (officeExts.has(ext) || pdfExts.has(ext)) return true;
+  if (imageExts.has(ext)) return true;
   if (ext === ".md" || ext === ".markdown" || ext === ".mdx") return true;
   if (ext === ".mmd" || ext === ".mermaid") return true;
   if (ext === ".html" || ext === ".htm" || ext === ".xhtml") return true;
@@ -87,7 +91,7 @@ export function isExpensivePreview(filePath: string): boolean {
 export async function buildPreview(
   filePath: string,
   width: number,
-  _height: number,
+  height: number,
   signal?: AbortSignal,
 ): Promise<PreviewPayload> {
   if (aborted(signal)) return emptyMetrics("");
@@ -102,11 +106,30 @@ export async function buildPreview(
 
   const ext = path.extname(filePath).toLowerCase();
 
-  // Image files — dropped for v1
+  // Image files — rasterized to Unicode half-blocks via terminal-image.
   if (imageExts.has(ext)) {
-    return emptyMetrics(
-      `image file: ${path.basename(filePath)}\nsize: ${humanSize(stat.size)}\n\n(image preview not yet available in TS version)`,
-    );
+    if (FAST_MODE) {
+      return emptyMetrics(
+        `${path.basename(filePath)}\nsize: ${humanSize(stat.size)}\n\n(image preview disabled in fast mode — unset SEER_FAST_MODE to enable)`,
+      );
+    }
+    if (stat.size > MAX_IMAGE_BYTES) {
+      return emptyMetrics(
+        `${path.basename(filePath)}\nsize: ${humanSize(stat.size)}\n\n(image too large to preview — limit ${humanSize(MAX_IMAGE_BYTES)})`,
+      );
+    }
+    try {
+      const buffer = await fsp.readFile(filePath);
+      if (aborted(signal)) return emptyMetrics("");
+      const { renderImagePreview } = await loadImage();
+      if (aborted(signal)) return emptyMetrics("");
+      return await renderImagePreview(buffer, filePath, width, height, signal);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return emptyMetrics(
+        `${path.basename(filePath)}\n\n(unable to read: ${msg})`,
+      );
+    }
   }
 
   // Archive files

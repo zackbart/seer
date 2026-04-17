@@ -17,6 +17,7 @@ import {
 import { copyToClipboard } from "./utils/clipboard.js";
 import { openInNewTab } from "./utils/openInTerminal.js";
 import { buildPreview, buildPlainPreview, isExpensivePreview } from "./previews/index.js";
+import { imageExts } from "./theme.js";
 import { cacheGet, cacheSet } from "./hooks/usePreviewCache.js";
 import { useKeyBindings } from "./hooks/useKeyBindings.js";
 import { useMouse } from "./hooks/useMouse.js";
@@ -335,12 +336,26 @@ export function App({ startDir, cwdFile }: AppProps) {
     // Expensive previewer: hold the stale preview body visible for the
     // debounce window (no blank flash), then fire the real pipeline. The
     // shared requestId lets rapid navigation cancel in-flight work.
+    //
+    // Exception: images. Showing the previous image under the new file's
+    // header and filename is more disorienting than a brief blank — clear
+    // the body synchronously for image targets.
+    const isImageTarget = imageExts.has(path.extname(entry.path).toLowerCase());
     dispatch({
       type: "SET_STATE",
-      payload: {
-        loading: true,
-        requestId: rid,
-      },
+      payload: isImageTarget
+        ? {
+            preview: "",
+            previewLineCount: 0,
+            previewTokenEstimate: 0,
+            previewTruncated: false,
+            loading: true,
+            requestId: rid,
+          }
+        : {
+            loading: true,
+            requestId: rid,
+          },
     });
 
     const useFastPath = !FAST_MODE && shikiMedianRef.current > SHIKI_FAST_PATH_THRESHOLD_MS;
