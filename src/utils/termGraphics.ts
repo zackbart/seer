@@ -95,9 +95,16 @@ export function buildKittyDeleteAll(): string {
 
 // ── placeholder grid ───────────────────────────────────────────────────────
 //
-// Each cell emits: SGR-set-foreground-256(id) + U+10EEEE + rowDiacritic +
-// colDiacritic. Every row ends with SGR reset so subsequent text doesn't
-// inherit the color-encoded id.
+// Each cell emits: base placeholder U+10EEEE + rowDiacritic + colDiacritic,
+// with the image id in the 256-color foreground. The grid is NOT rendered
+// through Ink's <Text> — Ink's ansi-tokenize splits each codepoint into a
+// separate cell, so combining diacritics end up in the columns AFTER the
+// base char and break coordinate binding. Instead, Preview.tsx reserves
+// blank space in Ink's layout and writes this grid to stdout out-of-band
+// via a `useEffect` after every commit (CUP to the preview body top-left,
+// then the grid rows). On terminals that natively speak Kitty graphics,
+// this works even across rerenders — Ink overdraws with blanks, our emit
+// restores the placeholders, the terminal substitutes pixels on draw.
 
 const PLACEHOLDER = "\u{10EEEE}";
 
@@ -136,6 +143,8 @@ const ROWCOL_DIACRITICS: number[] = [
   0x1D189, 0x1D1AA, 0x1D1AB, 0x1D1AC, 0x1D1AD, 0x1D242, 0x1D243, 0x1D244,
 ];
 
+// Placeholder (row, col) coords are encoded via diacritics — 297-entry table
+// caps the grid to 297×297 cells. Larger images get clipped to 297.
 export const MAX_GRID_DIMENSION = ROWCOL_DIACRITICS.length; // 297
 
 function diacritic(index: number): string {
@@ -143,9 +152,9 @@ function diacritic(index: number): string {
   return String.fromCodePoint(cp);
 }
 
-// Build per-row placeholder strings. Each string renders one logical row of
-// the image; caller emits them via one <Text> per row in Preview.tsx, which
-// keeps Ink's layout stable and avoids touching the ansi-wrap pipeline.
+// Build per-row placeholder strings with full (row, col) diacritic coords.
+// Emitted out-of-band via process.stdout.write after each Ink commit — does
+// NOT flow through Ink's text pipeline.
 export function buildPlaceholderGrid(id: number, cols: number, rows: number): string[] {
   const fg = `\x1b[38;5;${id}m`;
   const reset = "\x1b[0m";
@@ -154,8 +163,7 @@ export function buildPlaceholderGrid(id: number, cols: number, rows: number): st
     const rowDia = diacritic(r);
     let line = fg;
     for (let c = 0; c < cols; c++) {
-      const colDia = diacritic(c);
-      line += PLACEHOLDER + rowDia + colDia;
+      line += PLACEHOLDER + rowDia + diacritic(c);
     }
     line += reset;
     gridRows.push(line);

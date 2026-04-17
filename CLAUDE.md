@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.14.
+Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.15.
 
 ## Tech Stack
 
@@ -64,6 +64,7 @@ All source code lives in `src/`, organized as:
 | `src/previews/pdf.ts` | PDF text extraction via unpdf |
 | `src/previews/image.ts` | Image preview: Kitty-placeholder path (pixel-perfect) or half-block fallback via terminal-image |
 | `src/utils/termGraphics.ts` | Kitty graphics protocol helpers: protocol detection, APC transmit chunker, unicode-placeholder grid builder (U+10EEEE + diacritic coords + 256-color-fg id), delete escapes |
+| `src/utils/layout.ts` | `layoutDimensions()` — single source of truth for pane sizes, used by both App.tsx and Preview.tsx |
 | `src/hooks/useImageRegistry.ts` | Registry of live terminal-graphics image ids (1..255); lifetime bound to the preview cache so eviction frees terminal-side storage |
 | `src/hooks/useMouse.ts` | Mouse event parsing (SGR protocol) |
 | `src/hooks/useKeyBindings.ts` | Keyboard input handler |
@@ -89,6 +90,7 @@ All source code lives in `src/`, organized as:
 - **Layout math**: `layoutDimensions()` is the single source of truth
 - **Position-aware mouse**: Scroll targets the pane under the cursor (3 rows per wheel tick); wheel nav on the file list routes through `navigate()` → `requestPreview()` so it honors the debounce; click-drag in preview copies text
 - **Themes**: 9 built-in themes (7 dark, 2 light), persisted to `~/.config/seer/theme`
+- **Kitty image rendering (out-of-band)**: Placeholder cells are `U+10EEEE` + two combining diacritics (row + col coords) — Ink's `@alcalzone/ansi-tokenize` splits every codepoint into its own cell, so routing the grid through `<Text>` breaks coordinate binding and consumes 3× the width. Instead, Preview.tsx renders empty boxes to reserve vertical space, and a `useEffect` writes the placeholder grid to `process.stdout.write` directly via CUP positioning. Ink throttles stdout at 32ms with a trailing-edge flush, so the effect schedules follow-up emits at 50ms and 150ms to restore placeholders after Ink's delayed overwrite. Transmit APC (big base64 PNG chunked to 4096-char chunks) fires once per unique image id from `runBuild` in App.tsx, before the reducer dispatch. Registry in `useImageRegistry.ts` assigns ids 1..255 keyed by `path|modTime|size`; `usePreviewCache.ts` calls `releaseId(id)` + emits `\x1b_Ga=d,d=i,i=<id>` on cache eviction so terminal-side pixel storage is freed in lockstep. `src/index.tsx` exit cleanup emits delete-all when `hasTransmittedAny()` is true.
 
 ### Keybindings
 

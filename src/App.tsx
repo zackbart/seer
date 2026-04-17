@@ -19,6 +19,8 @@ import { openInNewTab } from "./utils/openInTerminal.js";
 import { buildPreview, buildPlainPreview, isExpensivePreview } from "./previews/index.js";
 import { imageExts } from "./theme.js";
 import { markTransmitted } from "./utils/termGraphics.js";
+import { layoutDimensions } from "./utils/layout.js";
+export { layoutDimensions };
 import { cacheGet, cacheSet } from "./hooks/usePreviewCache.js";
 import { useKeyBindings } from "./hooks/useKeyBindings.js";
 import { useMouse } from "./hooks/useMouse.js";
@@ -81,26 +83,6 @@ function reducer(state: AppState, action: Action): AppState {
     default:
       return state;
   }
-}
-
-// ── layout ───────────────────────────────────────────────────────────────────
-
-export function layoutDimensions(width: number, height: number, paneOffset: number) {
-  const base = Math.max(26, Math.floor(width / 4));
-  let leftW = Math.max(16, Math.min(Math.floor(width / 2), base + paneOffset));
-  let rightW = width - leftW - 1;
-  if (rightW < 20) {
-    rightW = 20;
-    leftW = width - rightW - 1;
-  }
-  // Guard against tiny terminals: the narrow-fallback branch can drive leftW
-  // or rightW negative if width is small enough that 20 cols don't fit. Clamp
-  // both to at least 1 so Ink doesn't get confused.
-  leftW = Math.max(1, leftW);
-  rightW = Math.max(1, rightW);
-  // TopBar=1 row + BottomBar=2 rows = 3 rows of chrome
-  const bodyH = Math.max(4, height - 3);
-  return { leftW, rightW, bodyH };
 }
 
 // ── initial state factory ────────────────────────────────────────────────────

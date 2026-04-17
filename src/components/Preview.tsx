@@ -5,6 +5,7 @@ import { AppState } from "../types.js";
 import { categorise, fileIconExt, entryColor, symlinkIcon, colors } from "../theme.js";
 import { humanSize } from "../utils/humanSize.js";
 import { ansiSlice, computeWrappedBody, visualWidth } from "../utils/ansiText.js";
+import { layoutDimensions } from "../utils/layout.js";
 
 interface Props {
   state: AppState;
@@ -17,6 +18,43 @@ export function Preview({ state, width, height }: Props) {
   const innerW = Math.max(1, width - 2);
   const rows: React.ReactNode[] = [];
   let slot = 0;
+
+  // Out-of-band Kitty placeholder emit. Ink's ansi-tokenize splits every
+  // codepoint into its own cell, so placeholder + diacritics don't survive
+  // the text pipeline. Write the grid directly to stdout after each commit,
+  // positioned into the preview body via CUP. Ink paints blanks in the
+  // image region on the next frame; this effect re-emits after Ink's 32ms
+  // throttled flush settles, restoring the placeholders over the blanks.
+  React.useEffect(() => {
+    const img = state.previewImage;
+    if (!img) return;
+    const { leftW } = layoutDimensions(state.width, state.height, state.paneOffset);
+    // Preview body top-left in 1-based CUP coordinates:
+    //   row = topbar(1) + paneBorder(1) + header(1) + divider(1) + 1 = 5
+    //   col = leftW + sep(1) + paneBorder(1) + 1 = leftW + 3
+    const topRow = 5;
+    const leftCol = leftW + 3;
+    const bodyRows = Math.max(0, height - 4);
+    const rowsToEmit = Math.min(img.gridRows.length, bodyRows);
+    const emit = () => {
+      let out = "";
+      for (let r = 0; r < rowsToEmit; r++) {
+        out += `\x1b[${topRow + r};${leftCol}H${img.gridRows[r]}`;
+      }
+      // Park cursor at bottom-left so it doesn't sit in the middle of the
+      // image region (some terminals show a cursor blink overlay).
+      out += `\x1b[${state.height};1H`;
+      try { process.stdout.write(out); } catch {}
+    };
+    // Ink throttles stdout at 32ms with a trailing-edge flush that overwrites
+    // our placeholders after React's commit. Schedule a follow-up after the
+    // throttle window, plus a longer safety emit in case two renders coalesce
+    // and push Ink's flush further out.
+    emit();
+    const t1 = setTimeout(emit, 50);
+    const t2 = setTimeout(emit, 150);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  });
 
   // ── header row ─────────────────────────────────────────────────────
   if (state.entries.length > 0 && state.selected < state.entries.length) {
@@ -61,18 +99,25 @@ export function Preview({ state, width, height }: Props) {
   // ── body ───────────────────────────────────────────────────────────
   const bodyH = Math.max(1, innerH - 2);
 
-  // Kitty-placeholder image path: render the grid rows as direct <Text>
-  // children, bypassing computeWrappedBody (the U+10EEEE placeholder char
-  // and its combining diacritics confuse visual-width measurement, and the
-  // grid is already sized to the pane). No scroll indicators, no selection.
+  // Compute the wrapped text body unconditionally. For image previews the
+  // result is unused but the hook call must stay — React's rules-of-hooks
+  // requires a consistent call order across renders.
+  let previewBody = state.preview;
+  if (!previewBody && !state.loading) previewBody = "  no preview";
+  if (state.loading && !previewBody) previewBody = "  loading…";
+
+  const body = React.useMemo(
+    () => computeWrappedBody(previewBody, innerW, bodyH, state.previewOffset),
+    [previewBody, innerW, bodyH, state.previewOffset],
+  );
+
+  // Kitty-placeholder image path: reserve blank space in Ink's layout; the
+  // actual placeholder grid is written out-of-band by the useEffect above.
+  // No scroll indicators, no selection.
   if (state.previewImage) {
-    const gridRows = state.previewImage.gridRows.slice(0, bodyH);
     for (let i = 0; i < bodyH; i++) {
-      const row = i < gridRows.length ? gridRows[i] : "";
       rows.push(
-        <Box key={`slot-${slot++}`} width={innerW} height={1} overflow="hidden">
-          <Text wrap="truncate-end">{row || " "}</Text>
-        </Box>,
+        <Box key={`slot-${slot++}`} width={innerW} height={1} />,
       );
     }
     return (
@@ -87,18 +132,6 @@ export function Preview({ state, width, height }: Props) {
       </Box>
     );
   }
-
-  let previewBody = state.preview;
-  if (!previewBody && !state.loading) previewBody = "  no preview";
-  if (state.loading && !previewBody) previewBody = "  loading…";
-
-  // Wrap once (memoized on inputs). `computeWrappedBody` is the single
-  // source of truth for scroll math — App.tsx uses the same helper so
-  // click-drag coordinates and wheel clamping stay in sync with render.
-  const body = React.useMemo(
-    () => computeWrappedBody(previewBody, innerW, bodyH, state.previewOffset),
-    [previewBody, innerW, bodyH, state.previewOffset],
-  );
 
   // Top scroll indicator — mirrors FileList's vocabulary ("N more" rather
   // than a line number, which after wrapping would refer to wrapped rows,
