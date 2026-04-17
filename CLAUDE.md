@@ -22,9 +22,17 @@ Seer is a TypeScript/React TUI file browser with a two-pane layout (directory li
 
 ```bash
 bun run start             # Run directly
-bun run build             # Compile to standalone binary
+bun run build             # Compile to standalone binary (./seer)
 bun run typecheck         # Type-check (tsc --noEmit)
 ```
+
+### Dev binary on PATH
+
+`~/.local/bin/seer-dev` is a symlink → `./seer` in this repo. After any `bun run build`, calling `seer-dev` anywhere on the system runs the freshly built dev binary. The released production binary lives at `/opt/homebrew/bin/seer` and is unaffected by dev builds.
+
+**Workflow:** after code changes, run `bun run build` to refresh `./seer`; the symlink picks it up automatically. No re-linking needed unless the repo is moved.
+
+**Setup (one-time):** `ln -sf /Users/zackbart/Dev/projects/seer/seer ~/.local/bin/seer-dev`
 
 ## Architecture
 
