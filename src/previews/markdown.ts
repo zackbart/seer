@@ -1,10 +1,15 @@
 import chalk from "chalk";
-import { Marked } from "marked";
+import { Marked, RendererThis, Tokens } from "marked";
 import { markedTerminal } from "marked-terminal";
 import { colors } from "../theme.js";
+import { renderRowsAsTable } from "./csv.js";
 
 let renderer: Marked | null = null;
 let rendererWidth = 0;
+
+function plainTableCell(parser: RendererThis["parser"], cell: Tokens.TableCell): string {
+  return parser.parseInline(cell.tokens, parser.textRenderer).replace(/\s+/g, " ").trim();
+}
 
 function getRenderer(width: number): Marked {
   if (renderer && rendererWidth === width) return renderer;
@@ -38,6 +43,19 @@ function getRenderer(width: number): Marked {
       emoji: true,
     }) as any,
   );
+  renderer.use({
+    extensions: [{
+      name: "table",
+      renderer(this: RendererThis, token: Tokens.Generic): string {
+        const table = token as Tokens.Table;
+        const rows = [
+          table.header.map((cell) => plainTableCell(this.parser, cell)),
+          ...table.rows.map((row) => row.map((cell) => plainTableCell(this.parser, cell))),
+        ];
+        return renderRowsAsTable(rows, width, false) + "\n\n";
+      },
+    }],
+  });
 
   chalk.level = level;
   return renderer;
