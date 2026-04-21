@@ -4,6 +4,7 @@ import { FAST_MODE, MAX_PREVIEW_BYTES, PreviewPayload } from "../types.js";
 import { imageExts, archiveExts, officeExts, pdfExts } from "../theme.js";
 import { isLikelyBinary } from "../utils/fs.js";
 import { humanSize } from "../utils/humanSize.js";
+import { sanitizeTerminalText } from "../utils/ansiText.js";
 
 // ── lazy previewer loading ──────────────────────────────────────────────────
 // Each previewer is dynamic-imported on first use and the promise is memoized,
@@ -45,13 +46,17 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 // ── payload helpers ─────────────────────────────────────────────────────────
 
 function emptyMetrics(text: string): PreviewPayload {
-  return { text, lineCount: 0, tokenEstimate: 0, truncated: false };
+  return { text: sanitizeTerminalText(text), lineCount: 0, tokenEstimate: 0, truncated: false };
 }
 
 function withMetrics(text: string, source: string, truncated: boolean): PreviewPayload {
   const lineCount = source.length === 0 ? 0 : source.split("\n").length;
   const tokenEstimate = Math.ceil(source.trim().length / 4);
-  return { text, lineCount, tokenEstimate, truncated };
+  return { text: sanitizeTerminalText(text), lineCount, tokenEstimate, truncated };
+}
+
+function normalizePreviewSource(text: string, options: { preserveTabs?: boolean } = {}): string {
+  return sanitizeTerminalText(text, options);
 }
 
 function aborted(signal?: AbortSignal): boolean {
@@ -167,19 +172,22 @@ export async function buildPreview(
         const { renderDocxPreview } = await loadDocx();
         if (aborted(signal)) return emptyMetrics("");
         const r = await renderDocxPreview(buffer);
-        return withMetrics(r.rendered, r.extracted, r.truncated);
+        const extracted = normalizePreviewSource(r.extracted);
+        return withMetrics(r.rendered, extracted, r.truncated);
       }
       if (ext === ".xlsx") {
         const { renderXlsxPreview } = await loadXlsx();
         if (aborted(signal)) return emptyMetrics("");
         const r = await renderXlsxPreview(buffer, width);
-        return withMetrics(r.rendered, r.extracted, r.truncated);
+        const extracted = normalizePreviewSource(r.extracted, { preserveTabs: true });
+        return withMetrics(r.rendered, extracted, r.truncated);
       }
       if (ext === ".pdf") {
         const { renderPdfPreview } = await loadPdf();
         if (aborted(signal)) return emptyMetrics("");
         const r = await renderPdfPreview(buffer);
-        return withMetrics(r.rendered, r.extracted, r.truncated);
+        const extracted = normalizePreviewSource(r.extracted);
+        return withMetrics(r.rendered, extracted, r.truncated);
       }
       return emptyMetrics(
         `${path.basename(filePath)}\n\n(no preview handler registered for ${ext})`,
@@ -213,15 +221,12 @@ export async function buildPreview(
       return emptyMetrics(buildHexPreview(data, path.basename(filePath), stat.size, stat.mtime));
     }
 
-    // Normalize line endings and expand tabs to spaces.
-    // Tabs must be expanded because Ink's width measurement treats \t as 0-width
-    // while the terminal renders them at 8-column tab stops, causing lines to
-    // overflow the preview pane.
-    text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    text = text.replace(/\t/g, "    ");
-
     const truncated = bytesRead === MAX_PREVIEW_BYTES;
-    const metricSource = text;
+    const preserveTabs = ext === ".tsv";
+    const normalizedText = normalizePreviewSource(text, { preserveTabs });
+    const metricSource = preserveTabs
+      ? normalizedText.replace(/\t/g, "    ")
+      : normalizedText;
 
     switch (ext) {
       case ".md":
@@ -229,28 +234,28 @@ export async function buildPreview(
       case ".mdx": {
         if (FAST_MODE) {
           // In fast mode, treat markdown as plain text — no marked, no Shiki.
-          const out = truncated ? text + "\n\n... preview truncated ..." : text;
+          const out = truncated ? metricSource + "\n\n... preview truncated ..." : metricSource;
           return withMetrics(out, metricSource, truncated);
         }
         const { renderMarkdown } = await loadMarkdown();
         if (aborted(signal)) return emptyMetrics("");
-        const rendered = renderMarkdown(text, width, truncated);
+        const rendered = renderMarkdown(metricSource, width, truncated);
         if (rendered) return withMetrics(rendered, metricSource, truncated);
         const { highlightCode } = await loadCode();
         if (aborted(signal)) return emptyMetrics("");
-        const hl = await highlightCode(filePath, text, signal);
+        const hl = await highlightCode(filePath, metricSource, signal);
         if (aborted(signal)) return emptyMetrics("");
-        if (hl !== text) {
+        if (hl !== metricSource) {
           const out = truncated ? hl + "\n\n... preview truncated ..." : hl;
           return withMetrics(out, metricSource, truncated);
         }
-        return withMetrics(text, metricSource, truncated);
+        return withMetrics(metricSource, metricSource, truncated);
       }
       case ".mmd":
       case ".mermaid": {
         const { renderMermaid } = await loadMermaid();
         if (aborted(signal)) return emptyMetrics("");
-        return withMetrics(await renderMermaid(text), metricSource, truncated);
+        return withMetrics(await renderMermaid(metricSource), metricSource, truncated);
       }
       case ".html":
       case ".htm":
@@ -262,38 +267,38 @@ export async function buildPreview(
         }
         const { renderHtml } = await loadHtml();
         if (aborted(signal)) return emptyMetrics("");
-        return withMetrics(renderHtml(text, width, truncated), metricSource, truncated);
+        return withMetrics(renderHtml(metricSource, width, truncated), metricSource, truncated);
       }
       case ".json":
       case ".jsonc": {
         const { renderJSONPreview } = await loadJson();
-        return withMetrics(renderJSONPreview(text, truncated), metricSource, truncated);
+        return withMetrics(renderJSONPreview(metricSource, truncated), metricSource, truncated);
       }
       case ".csv": {
         const { renderCSVPreview } = await loadCsv();
-        return withMetrics(renderCSVPreview(text, ",", width, truncated), metricSource, truncated);
+        return withMetrics(renderCSVPreview(metricSource, ",", width, truncated), metricSource, truncated);
       }
       case ".tsv": {
         const { renderCSVPreview } = await loadCsv();
-        return withMetrics(renderCSVPreview(text, "\t", width, truncated), metricSource, truncated);
+        return withMetrics(renderCSVPreview(normalizedText, "\t", width, truncated), metricSource, truncated);
       }
     }
 
     // Syntax highlighting for everything else
     if (FAST_MODE) {
-      const out = truncated ? text + "\n\n... preview truncated ..." : text;
+      const out = truncated ? metricSource + "\n\n... preview truncated ..." : metricSource;
       return withMetrics(out, metricSource, truncated);
     }
     const { highlightCode } = await loadCode();
     if (aborted(signal)) return emptyMetrics("");
-    const highlighted = await highlightCode(filePath, text, signal);
+    const highlighted = await highlightCode(filePath, metricSource, signal);
     if (aborted(signal)) return emptyMetrics("");
-    if (highlighted !== text) {
+    if (highlighted !== metricSource) {
       const out = truncated ? highlighted + "\n\n... preview truncated ..." : highlighted;
       return withMetrics(out, metricSource, truncated);
     }
 
-    const out = truncated ? text + "\n\n... preview truncated ..." : text;
+    const out = truncated ? metricSource + "\n\n... preview truncated ..." : metricSource;
     return withMetrics(out, metricSource, truncated);
   } finally {
     await fd.close();
@@ -329,8 +334,7 @@ export async function buildPlainPreview(
       let text = data.toString("utf-8");
       if (text.includes("\uFFFD") && bytesRead > 0) return null;
 
-      text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      text = text.replace(/\t/g, "    ");
+      text = normalizePreviewSource(text);
       const truncated = bytesRead === MAX_PREVIEW_BYTES;
       const out = truncated ? text + "\n\n... preview truncated ..." : text;
       return withMetrics(out, text, truncated);

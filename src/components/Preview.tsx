@@ -119,6 +119,9 @@ export function Preview({ state, width, height }: Props) {
         <Box key={`slot-${slot++}`} width={innerW} height={1} />,
       );
     }
+    while (slot < innerH) {
+      rows.push(<Box key={`slot-${slot++}`} width={innerW} height={1} />);
+    }
     return (
       <Box
         flexDirection="column"
@@ -126,6 +129,7 @@ export function Preview({ state, width, height }: Props) {
         height={height}
         borderStyle="round"
         borderColor={colors.border}
+        overflow="hidden"
       >
         {rows}
       </Box>
@@ -200,6 +204,14 @@ export function Preview({ state, width, height }: Props) {
     );
   }
 
+  while (slot < innerH) {
+    rows.push(
+      <Box key={`slot-${slot++}`} width={innerW} height={1} overflow="hidden">
+        <Text> </Text>
+      </Box>,
+    );
+  }
+
   return (
     <Box
       flexDirection="column"
@@ -207,6 +219,7 @@ export function Preview({ state, width, height }: Props) {
       height={height}
       borderStyle="round"
       borderColor={colors.border}
+      overflow="hidden"
     >
       {rows}
     </Box>

@@ -10,10 +10,80 @@
 // Matches a single ANSI escape sequence (CSI ... final byte).
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
 
+interface SanitizeTerminalTextOptions {
+  preserveTabs?: boolean;
+}
+
 // ── stripAnsi ───────────────────────────────────────────────────────────────
 
 export function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+}
+
+// ── sanitizeTerminalText ───────────────────────────────────────────────────
+//
+// Preview text can come from parsers that preserve raw control characters
+// (PDF extraction, Office text, pasted markdown, etc.). If those bytes reach
+// Ink unchanged, the terminal may interpret them as cursor movement or line
+// control and smear content across the pane. Sanitize all non-printing
+// controls while preserving ANSI SGR sequences used for styling.
+
+export function sanitizeTerminalText(
+  text: string,
+  options: SanitizeTerminalTextOptions = {},
+): string {
+  if (!text) return "";
+
+  const { preserveTabs = false } = options;
+  let out = "";
+  let i = 0;
+
+  while (i < text.length) {
+    ANSI_RE.lastIndex = i;
+    const match = ANSI_RE.exec(text);
+    if (match && match.index === i) {
+      out += match[0];
+      i += match[0].length;
+      continue;
+    }
+
+    const cp = text.codePointAt(i) ?? 0;
+    const chLen = cp > 0xffff ? 2 : 1;
+
+    if (cp === 0x0d) {
+      // Normalize CR / CRLF to LF.
+      if (text.codePointAt(i + chLen) === 0x0a) i += chLen;
+      out += "\n";
+      i += chLen;
+      continue;
+    }
+    if (cp === 0x0a || cp === 0x0085 || cp === 0x2028 || cp === 0x2029) {
+      out += "\n";
+      i += chLen;
+      continue;
+    }
+    if (cp === 0x09) {
+      out += preserveTabs ? "\t" : "    ";
+      i += chLen;
+      continue;
+    }
+    if (cp === 0x0b || cp === 0x0c) {
+      // Vertical tab / form feed behave like hard line breaks in extracted docs.
+      out += "\n";
+      i += chLen;
+      continue;
+    }
+    if (cp < 0x20 || cp === 0x7f || (cp >= 0x80 && cp < 0xa0)) {
+      // Drop the remaining control ranges entirely.
+      i += chLen;
+      continue;
+    }
+
+    out += text.slice(i, i + chLen);
+    i += chLen;
+  }
+
+  return out;
 }
 
 // ── visualWidth ─────────────────────────────────────────────────────────────
