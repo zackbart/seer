@@ -1,6 +1,6 @@
 {
   "name": "seer",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "description": "TUI file browser with live preview",
   "type": "module",
   "main": "src/index.tsx",
