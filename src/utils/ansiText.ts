@@ -7,8 +7,10 @@
 // thinks. The wrap/slice helpers maintain *cumulative* SGR state so that
 // stacked attributes (e.g. bold + color) survive across segment boundaries.
 
-// Matches a single ANSI escape sequence (CSI ... final byte).
-const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
+// Matches ANSI CSI SGR color/style escapes only (`...m`).
+const SGR_RE = /\x1b\[[0-9;]*m/g;
+// Matches ANSI CSI escapes broadly so we can strip non-SGR control sequences.
+const ANSI_CSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 
 interface SanitizeTerminalTextOptions {
   preserveTabs?: boolean;
@@ -17,7 +19,7 @@ interface SanitizeTerminalTextOptions {
 // ── stripAnsi ───────────────────────────────────────────────────────────────
 
 export function stripAnsi(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+  return s.replace(ANSI_CSI_RE, "");
 }
 
 // ── sanitizeTerminalText ───────────────────────────────────────────────────
@@ -39,11 +41,19 @@ export function sanitizeTerminalText(
   let i = 0;
 
   while (i < text.length) {
-    ANSI_RE.lastIndex = i;
-    const match = ANSI_RE.exec(text);
-    if (match && match.index === i) {
-      out += match[0];
-      i += match[0].length;
+    SGR_RE.lastIndex = i;
+    const sgr = SGR_RE.exec(text);
+    if (sgr && sgr.index === i) {
+      out += sgr[0];
+      i += sgr[0].length;
+      continue;
+    }
+
+    ANSI_CSI_RE.lastIndex = i;
+    const ansi = ANSI_CSI_RE.exec(text);
+    if (ansi && ansi.index === i) {
+      // Drop non-SGR terminal control escapes entirely.
+      i += ansi[0].length;
       continue;
     }
 
@@ -173,8 +183,8 @@ export function ansiSlice(str: string, startCol: number, endCol: number): string
   let emitting = false;
 
   while (i < str.length && col < endCol) {
-    ANSI_RE.lastIndex = i;
-    const match = ANSI_RE.exec(str);
+    ANSI_CSI_RE.lastIndex = i;
+    const match = ANSI_CSI_RE.exec(str);
 
     if (match && match.index === i) {
       const seq = match[0];
@@ -250,8 +260,8 @@ export function wrapAnsiLine(line: string, width: number): string[] {
 
   let i = 0;
   while (i < line.length) {
-    ANSI_RE.lastIndex = i;
-    const match = ANSI_RE.exec(line);
+    ANSI_CSI_RE.lastIndex = i;
+    const match = ANSI_CSI_RE.exec(line);
 
     if (match && match.index === i) {
       const seq = match[0];
