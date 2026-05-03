@@ -267,7 +267,9 @@ export async function buildPreview(
         }
         const { renderHtml } = await loadHtml();
         if (aborted(signal)) return emptyMetrics("");
-        return withMetrics(renderHtml(metricSource, width, truncated), metricSource, truncated);
+        const htmlOut = renderHtml(metricSource, width, truncated, signal);
+        if (aborted(signal)) return emptyMetrics("");
+        return withMetrics(htmlOut, metricSource, truncated);
       }
       case ".json":
       case ".jsonc": {

@@ -35,9 +35,35 @@ function getService(): TurndownService {
   return s;
 }
 
-export function renderHtml(text: string, width: number, truncated: boolean): string {
+// Turndown's `s.remove([...])` is a DOM-walk rule — the parser still walks the
+// full body of every <script>/<style> element before pruning. SPA shells with
+// hundreds of KB of inline JS pay that walk cost on every preview. We strip
+// the bodies from raw text first so turndown never sees them. Two passes per
+// tag: paired (open + close found) and open-only (close cut off by the 256KB
+// preview cap, leaving an unclosed `<script>` we still need to drop).
+function stripNoiseTags(text: string): string {
+  let out = text;
+  for (const tag of ["script", "style", "noscript"]) {
+    const paired = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}\\s*>`, "gi");
+    out = out.replace(paired, "");
+    const openOnly = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, "i");
+    out = out.replace(openOnly, "");
+  }
+  return out;
+}
+
+export function renderHtml(
+  text: string,
+  width: number,
+  truncated: boolean,
+  signal?: AbortSignal,
+): string {
+  if (signal?.aborted) return "";
   try {
-    const md = getService().turndown(text);
+    const stripped = stripNoiseTags(text);
+    if (signal?.aborted) return "";
+    const md = getService().turndown(stripped);
+    if (signal?.aborted) return "";
     return renderMarkdown(md, width, truncated);
   } catch {
     const out = truncated ? text + "\n\n... preview truncated ..." : text;
