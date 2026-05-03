@@ -36,10 +36,10 @@ interface GitInfo {
 function getGitInfo(name: string, gitStatus: Map<string, string> | null): GitInfo | null {
   if (!gitStatus) return null;
   const code = gitStatus.get(name) ?? "";
-  if (code.includes("M")) return { code: "M", color: "#e0af68", bold: true };
-  if (code.includes("A")) return { code: "A", color: "#9ece6a", bold: true };
-  if (code.includes("D")) return { code: "D", color: "#f7768e", bold: true };
-  if (code.includes("R")) return { code: "R", color: "#7aa2f7", bold: true };
+  if (code.includes("M")) return { code: "M", color: colors.media, bold: true };
+  if (code.includes("A")) return { code: "A", color: colors.success, bold: true };
+  if (code.includes("D")) return { code: "D", color: colors.danger, bold: true };
+  if (code.includes("R")) return { code: "R", color: colors.accent, bold: true };
   if (code.includes("?")) return { code: "?", color: colors.muted, bold: false };
   return null;
 }

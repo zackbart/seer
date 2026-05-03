@@ -21,7 +21,7 @@ import { imageExts } from "./theme.js";
 import { markTransmitted } from "./utils/termGraphics.js";
 import { layoutDimensions } from "./utils/layout.js";
 export { layoutDimensions };
-import { cacheGet, cacheSet } from "./hooks/usePreviewCache.js";
+import { cacheGet, cacheSet, cacheClear } from "./hooks/usePreviewCache.js";
 import { useKeyBindings } from "./hooks/useKeyBindings.js";
 import { useMouse } from "./hooks/useMouse.js";
 import { TopBar } from "./components/TopBar.js";
@@ -638,8 +638,20 @@ export function App({ startDir, cwdFile }: AppProps) {
 
       // Theme
       case "t": {
+        // Abort any in-flight preview so a completing render doesn't land in
+        // the just-cleared cache with old-theme ANSI escapes baked in.
+        abortRef.current?.abort();
         const name = cycleTheme();
+        // Cached payloads carry ANSI from the old theme — flush so the next
+        // navigation re-renders against live `colors.*`.
+        cacheClear();
         dispatch({ type: "SET_STATE", payload: { status: `theme: ${name}` } });
+        // The visible preview body is already-materialized ANSI in React
+        // state; flushing the cache alone leaves the on-screen render stale.
+        // Re-request the active selection so it re-paints in the new theme.
+        if (s.entries.length > 0 && s.selected < s.entries.length) {
+          requestPreview(s.entries, s.selected);
+        }
         return;
       }
 

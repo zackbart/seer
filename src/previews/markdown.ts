@@ -1,19 +1,22 @@
 import chalk from "chalk";
 import { Marked, RendererThis, Tokens } from "marked";
 import { markedTerminal } from "marked-terminal";
-import { colors } from "../theme.js";
+import { colors, currentThemeIndex } from "../theme.js";
 import { renderRowsAsTable } from "./csv.js";
 
 let renderer: Marked | null = null;
 let rendererWidth = 0;
+let rendererThemeIdx = -1;
 
 function plainTableCell(parser: RendererThis["parser"], cell: Tokens.TableCell): string {
   return parser.parseInline(cell.tokens, parser.textRenderer).replace(/\s+/g, " ").trim();
 }
 
 function getRenderer(width: number): Marked {
-  if (renderer && rendererWidth === width) return renderer;
+  const themeIdx = currentThemeIndex();
+  if (renderer && rendererWidth === width && rendererThemeIdx === themeIdx) return renderer;
   rendererWidth = width;
+  rendererThemeIdx = themeIdx;
 
   // Force chalk color support for the markdown renderer
   const level = chalk.level;
