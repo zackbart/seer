@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.19.
+Seer is a TypeScript/React TUI file browser with a two-pane layout (directory listing + live file preview), inspired by Yazi. Version 1.0.20.
 
 ## Tech Stack
 
@@ -52,7 +52,7 @@ All source code lives in `src/`, organized as:
 | `src/previews/index.ts` | Preview dispatcher — dynamic-imports each previewer on first use, threads `AbortSignal` through the pipeline, applies `SEER_FAST_MODE` guards. Also exports `buildPlainPreview` (fast-path stage 1) and `isExpensivePreview` classifier. |
 | `src/previews/code.ts` | Shiki syntax highlighting |
 | `src/previews/markdown.ts` | Markdown rendering |
-| `src/previews/html.ts` | HTML rendering — turndown → markdown.ts pipeline, strips `<script>/<style>/<noscript>` |
+| `src/previews/html.ts` | HTML rendering — pre-strips `<script>/<style>/<noscript>` bodies (paired + open-only regex) BEFORE turndown to skip walking large inline JS/CSS, then turndown → markdown.ts pipeline. Accepts `AbortSignal`. |
 | `src/previews/json.ts` | Colorized JSON |
 | `src/previews/csv.ts` | Table-formatted CSV/TSV (exports shared `renderRowsAsTable`) |
 | `src/previews/directory.ts` | Directory listing preview |
@@ -89,7 +89,7 @@ All source code lives in `src/`, organized as:
 - **Parallel `listDir`**: Per-entry lstat runs via `Promise.all`, and symlinks fire `readlink` + `stat` in parallel via `Promise.allSettled`. Large directories no longer serialize on I/O.
 - **Layout math**: `layoutDimensions()` is the single source of truth
 - **Position-aware mouse**: Scroll targets the pane under the cursor (3 rows per wheel tick); wheel nav on the file list routes through `navigate()` → `requestPreview()` so it honors the debounce; click-drag in preview copies text
-- **Themes**: 9 built-in themes (7 dark, 2 light), persisted to `~/.config/seer/theme`
+- **Themes**: 9 built-in themes (7 dark, 2 light), persisted to `~/.config/seer/theme`. Cycling theme (`t`) aborts any in-flight preview, flushes the preview cache (cached payloads carry old-theme ANSI), and re-requests the active selection so the visible body re-paints. Previewers that bake chalk styles (markdown's `markedTerminal` config, json/hex token tables) read live `colors.*` and bust their internal caches on theme change.
 - **Kitty image rendering (out-of-band)**: Placeholder cells are `U+10EEEE` + two combining diacritics (row + col coords) — Ink's `@alcalzone/ansi-tokenize` splits every codepoint into its own cell, so routing the grid through `<Text>` breaks coordinate binding and consumes 3× the width. Instead, Preview.tsx renders empty boxes to reserve vertical space, and a `useEffect` writes the placeholder grid to `process.stdout.write` directly via CUP positioning. Ink throttles stdout at 32ms with a trailing-edge flush, so the effect schedules follow-up emits at 50ms and 150ms to restore placeholders after Ink's delayed overwrite. Transmit APC (big base64 PNG chunked to 4096-char chunks) fires once per unique image id from `runBuild` in App.tsx, before the reducer dispatch. Registry in `useImageRegistry.ts` assigns ids 1..255 keyed by `path|modTime|size`; `usePreviewCache.ts` calls `releaseId(id)` + emits `\x1b_Ga=d,d=i,i=<id>` on cache eviction so terminal-side pixel storage is freed in lockstep. `src/index.tsx` exit cleanup emits delete-all when `hasTransmittedAny()` is true.
 
 ### Keybindings
