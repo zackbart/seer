@@ -25,7 +25,7 @@ Two panes: directory listing on the left, instant file preview on the right. Tha
 - 9 built-in color themes (7 dark, 2 light) with persistence
 - Nerd Font icons (with plain Unicode fallback)
 - Git status badges
-- Async preview pipeline with LRU cache
+- Bounded async preview pipeline with LRU cache, tuned to keep navigation responsive on large files
 
 ## Install
 
