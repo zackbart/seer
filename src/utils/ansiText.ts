@@ -37,14 +37,35 @@ export function sanitizeTerminalText(
   if (!text) return "";
 
   const { preserveTabs = false } = options;
-  let out = "";
+  let needsSanitize = false;
+  for (let j = 0; j < text.length; j++) {
+    const code = text.charCodeAt(j);
+    if (
+      code === 0x1b ||
+      code === 0x0d ||
+      code === 0x0b ||
+      code === 0x0c ||
+      (!preserveTabs && code === 0x09) ||
+      (code < 0x20 && code !== 0x0a && code !== 0x09) ||
+      code === 0x7f ||
+      (code >= 0x80 && code < 0xa0) ||
+      code === 0x2028 ||
+      code === 0x2029
+    ) {
+      needsSanitize = true;
+      break;
+    }
+  }
+  if (!needsSanitize) return text;
+
+  const out: string[] = [];
   let i = 0;
 
   while (i < text.length) {
     SGR_RE.lastIndex = i;
     const sgr = SGR_RE.exec(text);
     if (sgr && sgr.index === i) {
-      out += sgr[0];
+      out.push(sgr[0]);
       i += sgr[0].length;
       continue;
     }
@@ -63,23 +84,23 @@ export function sanitizeTerminalText(
     if (cp === 0x0d) {
       // Normalize CR / CRLF to LF.
       if (text.codePointAt(i + chLen) === 0x0a) i += chLen;
-      out += "\n";
+      out.push("\n");
       i += chLen;
       continue;
     }
     if (cp === 0x0a || cp === 0x0085 || cp === 0x2028 || cp === 0x2029) {
-      out += "\n";
+      out.push("\n");
       i += chLen;
       continue;
     }
     if (cp === 0x09) {
-      out += preserveTabs ? "\t" : "    ";
+      out.push(preserveTabs ? "\t" : "    ");
       i += chLen;
       continue;
     }
     if (cp === 0x0b || cp === 0x0c) {
       // Vertical tab / form feed behave like hard line breaks in extracted docs.
-      out += "\n";
+      out.push("\n");
       i += chLen;
       continue;
     }
@@ -89,11 +110,11 @@ export function sanitizeTerminalText(
       continue;
     }
 
-    out += text.slice(i, i + chLen);
+    out.push(text.slice(i, i + chLen));
     i += chLen;
   }
 
-  return out;
+  return out.join("");
 }
 
 // ── visualWidth ─────────────────────────────────────────────────────────────

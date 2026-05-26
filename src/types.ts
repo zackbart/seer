@@ -131,6 +131,8 @@ export const SEER_IMAGE_PROTOCOL: ImageProtocol =
   "auto";
 
 export const MAX_PREVIEW_BYTES = FAST_MODE ? 64 * 1024 : 256 * 1024;
+export const MAX_RENDER_PREVIEW_CHARS = FAST_MODE ? 32 * 1024 : 80 * 1024;
+export const MAX_RICH_RENDER_CHARS = FAST_MODE ? 32 * 1024 : 64 * 1024;
 export const MAX_DIR_PREVIEW = 40;
 export const PREVIEW_CACHE_MAX = 50;
 

@@ -1,5 +1,6 @@
 import chalk, { ChalkInstance } from "chalk";
 import { colors } from "../theme.js";
+import { MAX_RICH_RENDER_CHARS } from "../types.js";
 
 interface JsonStyles {
   key: ChalkInstance;
@@ -25,6 +26,15 @@ function buildStyles(): JsonStyles {
 
 export function renderJSONPreview(text: string, truncated: boolean): string {
   const styles = buildStyles();
+
+  if (truncated || text.length > MAX_RICH_RENDER_CHARS) {
+    const shown = text.slice(0, MAX_RICH_RENDER_CHARS);
+    const reason = truncated
+      ? "file truncated; showing raw JSON preview"
+      : "JSON too large for rich preview; showing raw preview";
+    return shown + "\n\n" + styles.muted(`  ... ${reason} ...`);
+  }
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(text.trim());

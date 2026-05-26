@@ -338,7 +338,11 @@ export function App({ startDir, cwdFile }: AppProps) {
           requestId: rid,
         },
       });
-      await runBuild(entry, width, height, key, rid, controller.signal, false);
+      debounceTimerRef.current = setTimeout(() => {
+        debounceTimerRef.current = null;
+        if (controller.signal.aborted) return;
+        void runBuild(entry, width, height, key, rid, controller.signal, false);
+      }, 0);
       return;
     }
 
@@ -357,7 +361,11 @@ export function App({ startDir, cwdFile }: AppProps) {
           requestId: rid,
         },
       });
-      await runBuild(entry, width, height, key, rid, controller.signal, false);
+      debounceTimerRef.current = setTimeout(() => {
+        debounceTimerRef.current = null;
+        if (controller.signal.aborted) return;
+        void runBuild(entry, width, height, key, rid, controller.signal, false);
+      }, 0);
       return;
     }
 
@@ -389,7 +397,7 @@ export function App({ startDir, cwdFile }: AppProps) {
           requestId: rid,
         },
       });
-      await runBuild(entry, width, height, key, rid, controller.signal, useFastPath);
+      void runBuild(entry, width, height, key, rid, controller.signal, useFastPath);
     }, PREVIEW_DEBOUNCE_MS);
   }, [runBuild]);
 

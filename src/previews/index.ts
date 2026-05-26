@@ -1,6 +1,12 @@
 import fsp from "fs/promises";
 import path from "path";
-import { FAST_MODE, MAX_PREVIEW_BYTES, PreviewPayload } from "../types.js";
+import {
+  FAST_MODE,
+  MAX_PREVIEW_BYTES,
+  MAX_RENDER_PREVIEW_CHARS,
+  MAX_RICH_RENDER_CHARS,
+  PreviewPayload,
+} from "../types.js";
 import { imageExts, archiveExts, officeExts, pdfExts } from "../theme.js";
 import { isLikelyBinary } from "../utils/fs.js";
 import { humanSize } from "../utils/humanSize.js";
@@ -57,6 +63,19 @@ function withMetrics(text: string, source: string, truncated: boolean): PreviewP
 
 function normalizePreviewSource(text: string, options: { preserveTabs?: boolean } = {}): string {
   return sanitizeTerminalText(text, options);
+}
+
+function capPlainPreviewText(text: string, truncated: boolean): string {
+  const capped = text.length > MAX_RENDER_PREVIEW_CHARS;
+  const body = capped ? text.slice(0, MAX_RENDER_PREVIEW_CHARS) : text;
+  if (capped) return body + "\n\n... preview render capped ...";
+  if (truncated) return body + "\n\n... preview truncated ...";
+  return body;
+}
+
+function capRichRenderInput(text: string): { text: string; capped: boolean } {
+  if (text.length <= MAX_RICH_RENDER_CHARS) return { text, capped: false };
+  return { text: text.slice(0, MAX_RICH_RENDER_CHARS), capped: true };
 }
 
 function aborted(signal?: AbortSignal): boolean {
@@ -234,22 +253,24 @@ export async function buildPreview(
       case ".mdx": {
         if (FAST_MODE) {
           // In fast mode, treat markdown as plain text — no marked, no Shiki.
-          const out = truncated ? metricSource + "\n\n... preview truncated ..." : metricSource;
-          return withMetrics(out, metricSource, truncated);
+          return withMetrics(capPlainPreviewText(metricSource, truncated), metricSource, truncated);
+        }
+        const richInput = capRichRenderInput(metricSource);
+        if (truncated || richInput.capped) {
+          return withMetrics(capPlainPreviewText(metricSource, truncated), metricSource, truncated);
         }
         const { renderMarkdown } = await loadMarkdown();
         if (aborted(signal)) return emptyMetrics("");
-        const rendered = renderMarkdown(metricSource, width, truncated);
+        const rendered = renderMarkdown(richInput.text, width, false);
         if (rendered) return withMetrics(rendered, metricSource, truncated);
         const { highlightCode } = await loadCode();
         if (aborted(signal)) return emptyMetrics("");
-        const hl = await highlightCode(filePath, metricSource, signal);
+        const hl = await highlightCode(filePath, richInput.text, signal);
         if (aborted(signal)) return emptyMetrics("");
-        if (hl !== metricSource) {
-          const out = truncated ? hl + "\n\n... preview truncated ..." : hl;
-          return withMetrics(out, metricSource, truncated);
+        if (hl !== richInput.text) {
+          return withMetrics(hl, metricSource, truncated);
         }
-        return withMetrics(metricSource, metricSource, truncated);
+        return withMetrics(capPlainPreviewText(metricSource, truncated), metricSource, truncated);
       }
       case ".mmd":
       case ".mermaid": {
@@ -267,7 +288,11 @@ export async function buildPreview(
         }
         const { renderHtml } = await loadHtml();
         if (aborted(signal)) return emptyMetrics("");
-        const htmlOut = renderHtml(metricSource, width, truncated, signal);
+        const richInput = capRichRenderInput(metricSource);
+        if (truncated || richInput.capped) {
+          return withMetrics(capPlainPreviewText(metricSource, truncated), metricSource, truncated);
+        }
+        const htmlOut = renderHtml(richInput.text, width, false, signal);
         if (aborted(signal)) return emptyMetrics("");
         return withMetrics(htmlOut, metricSource, truncated);
       }
@@ -288,20 +313,21 @@ export async function buildPreview(
 
     // Syntax highlighting for everything else
     if (FAST_MODE) {
-      const out = truncated ? metricSource + "\n\n... preview truncated ..." : metricSource;
-      return withMetrics(out, metricSource, truncated);
+      return withMetrics(capPlainPreviewText(metricSource, truncated), metricSource, truncated);
     }
     const { highlightCode } = await loadCode();
     if (aborted(signal)) return emptyMetrics("");
-    const highlighted = await highlightCode(filePath, metricSource, signal);
+    const richInput = capRichRenderInput(metricSource);
+    if (truncated || richInput.capped) {
+      return withMetrics(capPlainPreviewText(metricSource, truncated), metricSource, truncated);
+    }
+    const highlighted = await highlightCode(filePath, richInput.text, signal);
     if (aborted(signal)) return emptyMetrics("");
-    if (highlighted !== metricSource) {
-      const out = truncated ? highlighted + "\n\n... preview truncated ..." : highlighted;
-      return withMetrics(out, metricSource, truncated);
+    if (highlighted !== richInput.text) {
+      return withMetrics(highlighted, metricSource, truncated);
     }
 
-    const out = truncated ? metricSource + "\n\n... preview truncated ..." : metricSource;
-    return withMetrics(out, metricSource, truncated);
+    return withMetrics(capPlainPreviewText(metricSource, truncated), metricSource, truncated);
   } finally {
     await fd.close();
   }
@@ -338,8 +364,7 @@ export async function buildPlainPreview(
 
       text = normalizePreviewSource(text);
       const truncated = bytesRead === MAX_PREVIEW_BYTES;
-      const out = truncated ? text + "\n\n... preview truncated ..." : text;
-      return withMetrics(out, text, truncated);
+      return withMetrics(capPlainPreviewText(text, truncated), text, truncated);
     } finally {
       await fd.close();
     }
