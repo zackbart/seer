@@ -43,6 +43,7 @@ function printHelp() {
   console.log("  s             Cycle sort mode (name / size / modified)");
   console.log("  t             Cycle theme");
   console.log("  p             Copy selected path to clipboard");
+  console.log("  o             Open selected item with the default app");
   console.log("  < / >         Resize left / right pane");
   console.log("  R             Reload current directory");
   console.log("  ⌫ (backspace) Move selected file to trash");

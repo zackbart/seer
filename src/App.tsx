@@ -16,6 +16,7 @@ import {
 } from "./utils/fs.js";
 import { copyToClipboard } from "./utils/clipboard.js";
 import { openInNewTab } from "./utils/openInTerminal.js";
+import { openWithDefaultApp } from "./utils/openDefault.js";
 import { buildPreview, buildPlainPreview, isExpensivePreview } from "./previews/index.js";
 import { imageExts } from "./theme.js";
 import { markTransmitted } from "./utils/termGraphics.js";
@@ -714,6 +715,19 @@ export function App({ startDir, cwdFile }: AppProps) {
             dispatch({ type: "SET_STATE", payload: { status: `opened in nano: ${entry.name}` } });
           } catch (err) {
             dispatch({ type: "SET_STATE", payload: { status: `edit failed: ${(err as Error).message}` } });
+          }
+        }
+        return;
+
+      // Open with the OS default app
+      case "o":
+        if (s.entries.length > 0 && s.selected < s.entries.length) {
+          const entry = s.entries[s.selected];
+          try {
+            await openWithDefaultApp(entry.path);
+            dispatch({ type: "SET_STATE", payload: { status: `opened: ${entry.name}` } });
+          } catch (err) {
+            dispatch({ type: "SET_STATE", payload: { status: `open failed: ${(err as Error).message}` } });
           }
         }
         return;
