@@ -1,49 +1,28 @@
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
-import { Entry, SortMode } from "../types.js";
+import { Entry, MAX_DIR_STAT_CONCURRENCY, SortMode } from "../types.js";
+import { logPerf, perfNow } from "./perf.js";
 
 // ── directory listing ────────────────────────────────────────────────────────
 
 export async function listDir(dirPath: string, showHidden: boolean): Promise<Entry[]> {
+  const t0 = perfNow();
   const items = await fsp.readdir(dirPath, { withFileTypes: true });
 
-  // Resolve per-entry metadata in parallel. Serial for-await here used to
-  // dominate changeDir latency on large directories.
-  const resolved = await Promise.all(
-    items.map(async (item): Promise<Entry | null> => {
-      const name = item.name;
-      if (!showHidden && name.startsWith(".")) return null;
+  const visibleItems = showHidden ? items : items.filter((item) => !item.name.startsWith("."));
+  const concurrency = Math.max(1, Math.min(MAX_DIR_STAT_CONCURRENCY, visibleItems.length || 1));
+  const resolved = new Array<Entry | null>(visibleItems.length).fill(null);
+  let next = 0;
 
-      const full = path.join(dirPath, name);
+  const worker = async () => {
+    while (next < visibleItems.length) {
+      const idx = next++;
+      resolved[idx] = await entryFromDirent(dirPath, visibleItems[idx]);
+    }
+  };
 
-      try {
-        const lstat = await fsp.lstat(full);
-        let isSymlink = lstat.isSymbolicLink();
-        let isDir = lstat.isDirectory();
-        let size = lstat.size;
-        let modTime = lstat.mtime;
-        let symlinkTarget = "";
-
-        if (isSymlink) {
-          const [targetResult, statResult] = await Promise.allSettled([
-            fsp.readlink(full),
-            fsp.stat(full),
-          ]);
-          if (targetResult.status === "fulfilled") symlinkTarget = targetResult.value;
-          if (statResult.status === "fulfilled") {
-            isDir = statResult.value.isDirectory();
-            size = statResult.value.size;
-            modTime = statResult.value.mtime;
-          }
-        }
-
-        return { name, path: full, isDir, size, modTime, isSymlink, symlinkTarget };
-      } catch {
-        return null;
-      }
-    }),
-  );
+  await Promise.all(Array.from({ length: concurrency }, worker));
 
   const entries = resolved.filter((e): e is Entry => e !== null);
 
@@ -53,7 +32,47 @@ export async function listDir(dirPath: string, showHidden: boolean): Promise<Ent
     return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
   });
 
+  logPerf("listDir", {
+    path: dirPath,
+    items: items.length,
+    visible: visibleItems.length,
+    entries: entries.length,
+    concurrency,
+    ms: Math.round((performance.now() - t0) * 10) / 10,
+  });
+
   return entries;
+}
+
+async function entryFromDirent(dirPath: string, item: fs.Dirent): Promise<Entry | null> {
+  const name = item.name;
+  const full = path.join(dirPath, name);
+
+  try {
+    const lstat = await fsp.lstat(full);
+    const isSymlink = lstat.isSymbolicLink();
+    let isDir = lstat.isDirectory();
+    let size = lstat.size;
+    let modTime = lstat.mtime;
+    let symlinkTarget = "";
+
+    if (isSymlink) {
+      const [targetResult, statResult] = await Promise.allSettled([
+        fsp.readlink(full),
+        fsp.stat(full),
+      ]);
+      if (targetResult.status === "fulfilled") symlinkTarget = targetResult.value;
+      if (statResult.status === "fulfilled") {
+        isDir = statResult.value.isDirectory();
+        size = statResult.value.size;
+        modTime = statResult.value.mtime;
+      }
+    }
+
+    return { name, path: full, isDir, size, modTime, isSymlink, symlinkTarget };
+  } catch {
+    return null;
+  }
 }
 
 // ── sorting ──────────────────────────────────────────────────────────────────
@@ -185,11 +204,18 @@ export async function loadGitStatus(
   procRef?: { current: ReturnType<typeof Bun.spawn> | null },
   options?: { force?: boolean },
 ): Promise<Map<string, string> | null> {
+  const t0 = perfNow();
   const force = options?.force === true;
   const indexMtime = await readGitIndexMtime(cwd);
   if (!force && indexMtime !== null) {
     const cached = gitStatusCache.get(cwd);
     if (cached && cached.indexMtimeMs === indexMtime) {
+      logPerf("gitStatus", {
+        cwd,
+        cached: true,
+        entries: cached.status?.size ?? 0,
+        ms: Math.round((performance.now() - t0) * 10) / 10,
+      });
       return cached.status;
     }
   }
@@ -207,6 +233,12 @@ export async function loadGitStatus(
       if (indexMtime !== null) {
         gitStatusCache.set(cwd, { indexMtimeMs: indexMtime, status: null });
       }
+      logPerf("gitStatus", {
+        cwd,
+        cached: false,
+        status: "not-git",
+        ms: Math.round((performance.now() - t0) * 10) / 10,
+      });
       return null;
     }
 
@@ -240,8 +272,20 @@ export async function loadGitStatus(
     if (indexMtime !== null) {
       gitStatusCache.set(cwd, { indexMtimeMs: indexMtime, status });
     }
+    logPerf("gitStatus", {
+      cwd,
+      cached: false,
+      entries: status.size,
+      ms: Math.round((performance.now() - t0) * 10) / 10,
+    });
     return status;
   } catch {
+    logPerf("gitStatus", {
+      cwd,
+      cached: false,
+      status: "error",
+      ms: Math.round((performance.now() - t0) * 10) / 10,
+    });
     return null;
   }
 }

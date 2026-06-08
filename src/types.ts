@@ -135,6 +135,7 @@ export const MAX_RENDER_PREVIEW_CHARS = FAST_MODE ? 32 * 1024 : 80 * 1024;
 export const MAX_RICH_RENDER_CHARS = FAST_MODE ? 32 * 1024 : 64 * 1024;
 export const MAX_DIR_PREVIEW = 40;
 export const PREVIEW_CACHE_MAX = 50;
+export const MAX_DIR_STAT_CONCURRENCY = 128;
 
 // Debounce applied to expensive previewers (code/markdown/office/pdf) while
 // j/k-spam navigating. Cheap previewers (json/csv/hex/directory/plain) bypass.

@@ -4,7 +4,12 @@ import path from "path";
 import { AppState } from "../types.js";
 import { categorise, fileIconExt, entryColor, symlinkIcon, colors } from "../theme.js";
 import { humanSize } from "../utils/humanSize.js";
-import { ansiSlice, computeWrappedBody, visualWidth } from "../utils/ansiText.js";
+import {
+  ansiSlice,
+  computeWrappedBodyFromLines,
+  visualWidth,
+  wrapAnsiText,
+} from "../utils/ansiText.js";
 import { layoutDimensions } from "../utils/layout.js";
 
 interface Props {
@@ -105,9 +110,13 @@ export function Preview({ state, width, height }: Props) {
   if (!previewBody && !state.loading) previewBody = "  no preview";
   if (state.loading && !previewBody) previewBody = "  loading…";
 
+  const wrappedLines = React.useMemo(
+    () => wrapAnsiText(previewBody, innerW),
+    [previewBody, innerW],
+  );
   const body = React.useMemo(
-    () => computeWrappedBody(previewBody, innerW, bodyH, state.previewOffset),
-    [previewBody, innerW, bodyH, state.previewOffset],
+    () => computeWrappedBodyFromLines(wrappedLines, bodyH, state.previewOffset),
+    [wrappedLines, bodyH, state.previewOffset],
   );
 
   // Kitty-placeholder image path: reserve blank space in Ink's layout; the

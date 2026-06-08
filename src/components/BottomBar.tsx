@@ -105,7 +105,7 @@ export function BottomBar({ state, width }: Props) {
   } else {
     hints = [
       { key: "j/k", desc: "nav" },
-      { key: "↵", desc: "open" },
+      { key: "↵", desc: "enter" },
       { key: "h", desc: "back" },
       { key: "/", desc: "find" },
       { key: "s", desc: "sort" },

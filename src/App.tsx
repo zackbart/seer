@@ -21,6 +21,7 @@ import { buildPreview, buildPlainPreview, isExpensivePreview } from "./previews/
 import { imageExts } from "./theme.js";
 import { markTransmitted } from "./utils/termGraphics.js";
 import { layoutDimensions } from "./utils/layout.js";
+import { logPerf } from "./utils/perf.js";
 export { layoutDimensions };
 import { cacheGet, cacheSet, cacheClear } from "./hooks/usePreviewCache.js";
 import { useKeyBindings } from "./hooks/useKeyBindings.js";
@@ -233,6 +234,14 @@ export function App({ startDir, cwdFile }: AppProps) {
       if (isExpensivePreview(entry.path)) {
         updateShikiMedian(elapsed);
       }
+      logPerf("previewBuild", {
+        path: entry.path,
+        ms: Math.round(elapsed * 10) / 10,
+        image: payload.image?.protocol ?? null,
+        chars: payload.text.length,
+        lines: payload.lineCount,
+        truncated: payload.truncated,
+      });
 
       // Terminal-graphics one-shot: emit the Kitty transmit APC before the
       // dispatch so the terminal has the pixels ready by the time Preview
@@ -273,7 +282,11 @@ export function App({ startDir, cwdFile }: AppProps) {
   }, []);
 
   const requestPreview = useCallback(async (
-    entries: Entry[], selected: number, forceWidth?: number, forceHeight?: number,
+    entries: Entry[],
+    selected: number,
+    forceWidth?: number,
+    forceHeight?: number,
+    forcePaneOffset?: number,
   ) => {
     const s = stateRef.current;
     if (entries.length === 0 || selected >= entries.length) {
@@ -284,7 +297,8 @@ export function App({ startDir, cwdFile }: AppProps) {
     const entry = entries[selected];
     const w = forceWidth ?? s.width;
     const h = forceHeight ?? s.height;
-    const { rightW, bodyH } = layoutDimensions(w, h, s.paneOffset);
+    const paneOffset = forcePaneOffset ?? s.paneOffset;
+    const { rightW, bodyH } = layoutDimensions(w, h, paneOffset);
     const width = Math.max(40, rightW - 2);
     const height = Math.max(8, bodyH);
     const key = previewKey(entry.path, entry.modTime, entry.size, width, height);
@@ -294,6 +308,12 @@ export function App({ startDir, cwdFile }: AppProps) {
     const cached = cacheGet(key);
     if (cached !== undefined) {
       cancelPendingPreview();
+      logPerf("preview", {
+        path: entry.path,
+        cached: true,
+        width,
+        height,
+      });
       // Bump requestId so any in-flight build from a prior navigation can't
       // pass the stale-check in the reducer and overwrite this hit.
       requestIdRef.current++;
@@ -322,6 +342,14 @@ export function App({ startDir, cwdFile }: AppProps) {
 
     const expensive = isExpensivePreview(entry.path);
     const isImageTarget = imageExts.has(path.extname(entry.path).toLowerCase());
+    logPerf("preview", {
+      path: entry.path,
+      cached: false,
+      expensive,
+      image: isImageTarget,
+      width,
+      height,
+    });
 
     // Cheap previewers (json/csv/hex/directory/plain text): skip debounce
     // AND clear the body immediately — their build takes <20ms so the blank
@@ -401,6 +429,31 @@ export function App({ startDir, cwdFile }: AppProps) {
       void runBuild(entry, width, height, key, rid, controller.signal, useFastPath);
     }, PREVIEW_DEBOUNCE_MS);
   }, [runBuild]);
+
+  const resizePreviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (state.width === 0 || state.height === 0 || state.entries.length === 0) return;
+    if (resizePreviewTimerRef.current !== null) {
+      clearTimeout(resizePreviewTimerRef.current);
+    }
+    resizePreviewTimerRef.current = setTimeout(() => {
+      resizePreviewTimerRef.current = null;
+      const s = stateRef.current;
+      if (s.entries.length === 0 || s.selected >= s.entries.length) return;
+      logPerf("terminalResizePreview", {
+        width: s.width,
+        height: s.height,
+        path: s.entries[s.selected]?.path,
+      });
+      requestPreview(s.entries, s.selected, s.width, s.height);
+    }, 100);
+    return () => {
+      if (resizePreviewTimerRef.current !== null) {
+        clearTimeout(resizePreviewTimerRef.current);
+        resizePreviewTimerRef.current = null;
+      }
+    };
+  }, [state.width, state.height, requestPreview]);
 
   const navigate = useCallback((idx: number) => {
     dispatch({ type: "NAVIGATE", idx });
@@ -669,14 +722,14 @@ export function App({ startDir, cwdFile }: AppProps) {
         const minOffset = -(Math.floor(s.width / 3) - 16);
         const newOffset = Math.max(minOffset, s.paneOffset - 2);
         dispatch({ type: "SET_STATE", payload: { paneOffset: newOffset } });
-        requestPreview(s.entries, s.selected);
+        requestPreview(s.entries, s.selected, s.width, s.height, newOffset);
         return;
       }
       case ">": {
         const maxOffset = Math.floor(s.width / 4);
         const newOffset = Math.min(maxOffset, s.paneOffset + 2);
         dispatch({ type: "SET_STATE", payload: { paneOffset: newOffset } });
-        requestPreview(s.entries, s.selected);
+        requestPreview(s.entries, s.selected, s.width, s.height, newOffset);
         return;
       }
 

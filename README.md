@@ -75,7 +75,7 @@ function s() {
 | Key | Action |
 |---|---|
 | `j` / `k` | Move up / down |
-| `enter` / `l` | Open directory |
+| `enter` / `l` | Enter directory |
 | `h` | Parent directory |
 | `g` / `G` | Jump to top / bottom |
 | `/` | Fuzzy search |
@@ -112,6 +112,7 @@ Press `t` to cycle through themes. Your choice is saved to `~/.config/seer/theme
 |---|---|
 | `SEER_NO_NERD_FONT=1` | Use plain Unicode instead of Nerd Font glyphs |
 | `SEER_FAST_MODE=1` | Low-power mode: disables syntax highlighting, markdown/HTML rendering, and office/PDF parsers; shrinks the preview byte cap; raises the nav debounce. Use on Raspberry Pi, older laptops, or slow SSH connections. A `[fast]` badge appears in the status line while enabled. |
+| `SEER_DEBUG_PERF=1` | Write JSON-lines perf events to `$TMPDIR/seer-perf.log` (`SEER_DEBUG_PERF_FILE=/path` overrides the destination). |
 
 ## Supported Formats
 

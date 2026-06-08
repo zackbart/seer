@@ -36,7 +36,7 @@ function printHelp() {
   console.log("Keybindings:");
   console.log("  j / k         Move selection up / down");
   console.log("  g / G         Jump to top / bottom");
-  console.log("  l / ↵         Open directory");
+  console.log("  l / ↵         Enter directory");
   console.log("  h             Go to parent directory");
   console.log("  /             Fuzzy search within current directory");
   console.log("  .             Toggle hidden files");
@@ -56,6 +56,7 @@ function printHelp() {
   console.log();
   console.log("Environment:");
   console.log("  SEER_NO_NERD_FONT=1   Use plain Unicode instead of Nerd Font glyphs");
+  console.log("  SEER_DEBUG_PERF=1     Write perf events to $TMPDIR/seer-perf.log");
 }
 
 // Parse CLI args

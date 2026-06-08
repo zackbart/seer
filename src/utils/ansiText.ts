@@ -356,6 +356,14 @@ export function wrapAnsiLine(line: string, width: number): string[] {
 // ── wrapAnsiText ───────────────────────────────────────────────────────────
 
 export function wrapAnsiText(text: string, width: number): string[] {
+  const cached = wrapCacheGet(text, width);
+  if (cached) return cached;
+  const out = wrapAnsiTextUncached(text, width);
+  wrapCacheSet(text, width, out);
+  return out;
+}
+
+function wrapAnsiTextUncached(text: string, width: number): string[] {
   const rawLines = text.split("\n");
   const out: string[] = [];
   for (const line of rawLines) {
@@ -363,6 +371,31 @@ export function wrapAnsiText(text: string, width: number): string[] {
     for (const w of wrapped) out.push(w);
   }
   return out;
+}
+
+const WRAP_CACHE_MAX = 8;
+interface WrapCacheEntry {
+  text: string;
+  width: number;
+  lines: string[];
+}
+const wrapCache: WrapCacheEntry[] = [];
+
+function wrapCacheGet(text: string, width: number): string[] | null {
+  for (let i = 0; i < wrapCache.length; i++) {
+    const entry = wrapCache[i];
+    if (entry.width === width && entry.text === text) {
+      wrapCache.splice(i, 1);
+      wrapCache.push(entry);
+      return entry.lines;
+    }
+  }
+  return null;
+}
+
+function wrapCacheSet(text: string, width: number, lines: string[]): void {
+  wrapCache.push({ text, width, lines });
+  while (wrapCache.length > WRAP_CACHE_MAX) wrapCache.shift();
 }
 
 // ── computeWrappedBody ─────────────────────────────────────────────────────
@@ -390,8 +423,16 @@ export function computeWrappedBody(
   previewOffset: number,
 ): WrappedBody {
   const width = Math.max(1, innerW);
-  const height = Math.max(1, bodyH);
   const wrappedLines = wrapAnsiText(previewText, width);
+  return computeWrappedBodyFromLines(wrappedLines, bodyH, previewOffset);
+}
+
+export function computeWrappedBodyFromLines(
+  wrappedLines: string[],
+  bodyH: number,
+  previewOffset: number,
+): WrappedBody {
+  const height = Math.max(1, bodyH);
   const total = wrappedLines.length;
 
   // Short-circuit: everything fits, no indicators needed.
