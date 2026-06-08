@@ -11,12 +11,13 @@ Seer is a TypeScript/React TUI file browser with a two-pane layout (directory li
 - **Shiki (`shiki/core` + JS regex engine)** — syntax highlighting (nord theme). Uses `createHighlighterCore` with explicit per-grammar dynamic imports from `@shikijs/langs/*` rather than the full `shiki` package, so only the languages a user actually opens ever get materialized.
 - **Chalk** — terminal color support
 - **Marked + marked-terminal** — Markdown rendering (lazy-loaded)
-- **turndown** — HTML→Markdown conversion, reused by the HTML previewer (lazy-loaded)
+- **turndown (+ turndown-plugin-gfm)** — HTML→Markdown conversion, reused by the HTML previewer (lazy-loaded)
 - **mammoth** — `.docx` text extraction (lazy-loaded)
 - **exceljs** — `.xlsx` parsing (lazy-loaded)
 - **unpdf** — PDF text extraction, pdfjs-dist wrapper, Bun-friendly (lazy-loaded)
 - **terminal-image + jimp** — image half-block rasterization (fallback path, lazy-loaded)
 - **supports-terminal-graphics** — Kitty/iTerm2 graphics protocol detection
+- **Text utilities** — `string-width` (display width), `cli-truncate` (width-aware truncation), `image-size` (image dimensions for the graphics path)
 
 ## Build & Run
 
@@ -24,15 +25,16 @@ Seer is a TypeScript/React TUI file browser with a two-pane layout (directory li
 bun run start             # Run directly
 bun run build             # Compile to standalone binary (./seer)
 bun run typecheck         # Type-check (tsc --noEmit)
+bun test                  # Run *.test.ts (Bun auto-discovers; no script entry needed)
 ```
 
 ### Dev binary on PATH
 
 `~/.local/bin/seer-dev` is a symlink → `./seer` in this repo. After any `bun run build`, calling `seer-dev` anywhere on the system runs the freshly built dev binary. The released production binary lives at `/opt/homebrew/bin/seer` and is unaffected by dev builds.
 
-**Workflow:** after code changes, run `bun run build` to refresh `./seer`; the symlink picks it up automatically. No re-linking needed unless the repo is moved.
+**Workflow:** after code changes, run `bun run build` to refresh `./seer`; the symlink picks it up automatically. No re-linking needed unless the repo moves.
 
-**Setup (one-time):** `ln -sf /Users/zackbart/Dev/projects/seer/seer ~/.local/bin/seer-dev`
+**Setup (one-time):** `ln -sf /Users/zackbart/Dev/projects/tooling/seer/seer ~/.local/bin/seer-dev`
 
 ## Architecture
 
@@ -40,10 +42,11 @@ All source code lives in `src/`, organized as:
 
 | File/Dir | Contents |
 |---|---|
-| `src/index.tsx` | Entry point, CLI flags, alt-screen setup |
-| `src/App.tsx` | Main component, useReducer state, key/mouse handlers, layout |
-| `src/types.ts` | Enums, `Entry`, `AppState` interface, constants |
+| `src/index.tsx` | Entry point, CLI flags, alt-screen setup, exit cleanup |
+| `src/App.tsx` | Main component, useReducer state, key/mouse handlers, layout, preview orchestration |
+| `src/types.ts` | Enums, `Entry`, `AppState` interface, all tuning constants |
 | `src/theme.ts` | 9 color themes, persistence, icons, file categorization |
+| `src/marked-terminal.d.ts` | Local type shim for `marked-terminal` (no shipped types) |
 | `src/components/TopBar.tsx` | Breadcrumb path + badges |
 | `src/components/FileList.tsx` | Directory listing with git badges |
 | `src/components/Preview.tsx` | File preview with selection highlighting |
@@ -64,41 +67,41 @@ All source code lives in `src/`, organized as:
 | `src/previews/pdf.ts` | PDF text extraction via unpdf |
 | `src/previews/image.ts` | Image preview: Kitty-placeholder path (pixel-perfect) or half-block fallback via terminal-image |
 | `src/utils/termGraphics.ts` | Kitty graphics protocol helpers: protocol detection, APC transmit chunker, unicode-placeholder grid builder (U+10EEEE + diacritic coords + 256-color-fg id), delete escapes |
-| `src/utils/layout.ts` | `layoutDimensions()` — single source of truth for pane sizes, used by both App.tsx and Preview.tsx |
+| `src/utils/layout.ts` | `layoutDimensions()` — single source of truth for pane sizes, used by App.tsx and Preview.tsx |
+| `src/utils/fs.ts` | Directory listing, sorting, trash, git status, cache-key construction |
+| `src/utils/ansiText.ts` | ANSI-aware text utils: stripAnsi, visualWidth, ansiSlice, wrap, computeWrappedBody, truncateByWidth, sanitizeTerminalText |
+| `src/utils/ansiText.test.ts` | `bun:test` coverage for the ANSI text utils (the only test file) |
+| `src/utils/clipboard.ts` | OS clipboard integration |
+| `src/utils/openInTerminal.ts` | Detect host terminal and open files in a new tab (nano) |
+| `src/utils/humanSize.ts` | File size formatting |
 | `src/hooks/useImageRegistry.ts` | Registry of live terminal-graphics image ids (1..255); lifetime bound to the preview cache so eviction frees terminal-side storage |
 | `src/hooks/useMouse.ts` | Mouse event parsing (SGR protocol) |
 | `src/hooks/useKeyBindings.ts` | Keyboard input handler |
 | `src/hooks/usePreviewCache.ts` | LRU preview cache |
-| `src/utils/fs.ts` | Directory listing, sorting, trash, git status |
-| `src/utils/clipboard.ts` | OS clipboard integration |
-| `src/utils/openInTerminal.ts` | Detect host terminal and open files in a new tab (nano) |
-| `src/utils/humanSize.ts` | File size formatting |
-| `src/utils/ansiText.ts` | ANSI-aware text utils: stripAnsi, visualWidth, ansiSlice, wrap, computeWrappedBody, truncateByWidth |
 
 ### Key Patterns
 
 - **useReducer**: All state in `AppState`, mutations via dispatch. Cache writes happen in `App.tsx` (post-dispatch side effect), NOT inside the reducer — the reducer is pure.
-- **Lazy preview pipeline**: `src/previews/index.ts` is the only module imported eagerly; every concrete previewer (`code`, `markdown`, `json`, `docx`, `xlsx`, `pdf`, etc.) is dynamic-imported on first use and memoized. Bun's `--compile` mode bundles these dynamically-imported modules AND defers their top-level execution until the `import()` call runs — verified in practice, so lazy loading works in both `bun run start` and the release binary.
-- **Debounce + AbortController**: `App.tsx:requestPreview` classifies the target via `isExpensivePreview`. Cache hits dispatch synchronously (zero-flicker instant). Cheap previewers (json/csv/hex/directory/plain text) also dispatch immediately — no debounce — so search-as-you-type stays responsive. Expensive previewers (code/markdown/office/pdf/archive) are debounced via `PREVIEW_DEBOUNCE_MS` held in `debounceTimerRef`; each new request aborts the previous via `abortRef` (`AbortController`). The stale preview body stays visible during the debounce window to avoid blank flash. `requestId` still gates reducer acceptance as a final belt-and-suspenders check.
-- **Measurement-gated fast-path**: `shikiMedianRef` tracks a rolling EMA of recent `buildPreview` times for expensive files. When the median exceeds `SHIKI_FAST_PATH_THRESHOLD_MS` (~40ms — only trips on slow hardware), the expensive path splits into two dispatches: `SET_PREVIEW_STAGED` with raw plain text first, then `SET_PREVIEW` with the highlighted version. Fast hardware stays single-dispatch, so there's no flicker regression.
-- **Preview payload**: `buildPreview` returns `{ text, lineCount, tokenEstimate, truncated }`; metrics computed on raw source before rendering and shown in the preview header as `size · lines · ~tokens · date` with width-aware graceful degradation
-- **ANSI-aware wrap**: All preview lines wrapped to innerW via `wrapAnsiText` with cumulative SGR state carried across breaks; `computeWrappedBody` is the single source of truth for scroll math (Preview render, mouse wheel, click-drag selection all use it)
-- **Flat-Text bars**: TopBar and BottomBar use explicit plain-string segment lists + `visualWidth` measurement + explicit `backgroundColor` on every Text, since Ink's `<Box>` does not support backgroundColor
-- **Native-LRU cache**: `src/hooks/usePreviewCache.ts` uses Map insertion-order with delete-then-set on both hit and overwrite. 50-entry cap, keyed by `path|modTime|size|width|height`, stores full `PreviewPayload`.
-- **Git status cache**: Keyed on `.git/index` mtime, not a wall-clock TTL. Revisiting a cwd whose index hasn't changed skips the subprocess. `loadGitStatus` + `loadGit` take an `options.force` flag — used by `R` reload and after trash to invalidate the cache.
-- **Parallel `listDir`**: Per-entry lstat runs via `Promise.all`, and symlinks fire `readlink` + `stat` in parallel via `Promise.allSettled`. Large directories no longer serialize on I/O.
-- **Layout math**: `layoutDimensions()` is the single source of truth
-- **Position-aware mouse**: Scroll targets the pane under the cursor (3 rows per wheel tick); wheel nav on the file list routes through `navigate()` → `requestPreview()` so it honors the debounce; click-drag in preview copies text
-- **Themes**: 9 built-in themes (7 dark, 2 light), persisted to `~/.config/seer/theme`. Cycling theme (`t`) aborts any in-flight preview, flushes the preview cache (cached payloads carry old-theme ANSI), and re-requests the active selection so the visible body re-paints. Previewers that bake chalk styles (markdown's `markedTerminal` config, json/hex token tables) read live `colors.*` and bust their internal caches on theme change.
-- **Kitty image rendering (out-of-band)**: Placeholder cells are `U+10EEEE` + two combining diacritics (row + col coords) — Ink's `@alcalzone/ansi-tokenize` splits every codepoint into its own cell, so routing the grid through `<Text>` breaks coordinate binding and consumes 3× the width. Instead, Preview.tsx renders empty boxes to reserve vertical space, and a `useEffect` writes the placeholder grid to `process.stdout.write` directly via CUP positioning. Ink throttles stdout at 32ms with a trailing-edge flush, so the effect schedules follow-up emits at 50ms and 150ms to restore placeholders after Ink's delayed overwrite. Transmit APC (big base64 PNG chunked to 4096-char chunks) fires once per unique image id from `runBuild` in App.tsx, before the reducer dispatch. Registry in `useImageRegistry.ts` assigns ids 1..255 keyed by `path|modTime|size`; `usePreviewCache.ts` calls `releaseId(id)` + emits `\x1b_Ga=d,d=i,i=<id>` on cache eviction so terminal-side pixel storage is freed in lockstep. `src/index.tsx` exit cleanup emits delete-all when `hasTransmittedAny()` is true.
+- **Lazy preview pipeline**: `src/previews/index.ts` is the only previewer module imported eagerly; every concrete previewer (`code`, `markdown`, `json`, `docx`, `xlsx`, `pdf`, etc.) is dynamic-imported on first use and memoized. Bun's `--compile` defers top-level execution of dynamically-imported modules until the `import()` runs — verified in both `bun run start` and the release binary.
+- **Debounce + AbortController**: `App.tsx:requestPreview` classifies the target via `isExpensivePreview`. Cache hits dispatch synchronously (zero-flicker). Cheap previewers (json/csv/hex/directory/plain text) also dispatch immediately — no debounce — so search-as-you-type stays responsive. Expensive previewers (code/markdown/office/pdf/archive) debounce via `PREVIEW_DEBOUNCE_MS` (60ms; 150ms in fast mode) held in `debounceTimerRef`; each new request aborts the previous via `abortRef` (`AbortController`). The stale body stays visible during the debounce window to avoid blank flash. `requestId` gates reducer acceptance as a final check.
+- **Measurement-gated fast-path**: `shikiMedianRef` tracks a rolling EMA of recent `buildPreview` times for expensive files. When the median exceeds `SHIKI_FAST_PATH_THRESHOLD_MS` (40ms — only trips on slow hardware), the expensive path splits into two dispatches: `SET_PREVIEW_STAGED` (raw plain text) then `SET_PREVIEW` (highlighted). Fast hardware stays single-dispatch, no flicker.
+- **Preview payload**: `buildPreview` returns `{ text, lineCount, tokenEstimate, truncated }`; metrics computed on raw source before rendering, shown in the preview header as `size · lines · ~tokens · date` with width-aware graceful degradation.
+- **ANSI-aware wrap**: All preview lines wrapped to innerW via `wrapAnsiText` with cumulative SGR state carried across breaks; `computeWrappedBody` is the single source of truth for scroll math (Preview render, mouse wheel, click-drag selection all use it).
+- **Flat-Text bars**: TopBar/BottomBar use explicit plain-string segment lists + `visualWidth` measurement + explicit `backgroundColor` on every Text, since Ink's `<Box>` does not support backgroundColor.
+- **Native-LRU cache**: `usePreviewCache.ts` uses Map insertion-order with delete-then-set on hit and overwrite. 50-entry cap (`PREVIEW_CACHE_MAX`), keyed by `path|modTime|size|width|height` (built in `fs.ts`), stores full `PreviewPayload`.
+- **Git status cache**: Keyed on `.git/index` mtime, not a wall-clock TTL. Revisiting a cwd whose index hasn't changed skips the subprocess. `loadGitStatus` + `loadGit` take `options.force` — used by `R` reload and after trash to invalidate.
+- **Parallel `listDir`**: Per-entry lstat runs via `Promise.all`; symlinks fire `readlink` + `stat` in parallel via `Promise.allSettled`. Large directories don't serialize on I/O.
+- **Position-aware mouse**: Scroll targets the pane under the cursor (3 rows per wheel tick); wheel nav on the file list routes through `navigate()` → `requestPreview()` so it honors the debounce; click-drag in preview copies text.
+- **Themes**: 9 built-in (7 dark, 2 light), persisted to `~/.config/seer/theme`. Cycling theme (`t`) aborts any in-flight preview, flushes the preview cache (cached payloads carry old-theme ANSI), and re-requests the active selection so the visible body re-paints. Previewers that bake chalk styles (markdown's `markedTerminal` config, json/hex token tables) read live `colors.*` and bust their internal caches on theme change.
+- **Kitty image rendering (out-of-band)**: Placeholder cells are `U+10EEEE` + two combining diacritics (row/col coords). Ink's `@alcalzone/ansi-tokenize` splits every codepoint into its own cell, so routing the grid through `<Text>` breaks coordinate binding — instead, Preview.tsx reserves vertical space with empty boxes and a `useEffect` writes the placeholder grid straight to `process.stdout.write` via CUP positioning, with follow-up emits at 50ms/150ms to survive Ink's 32ms throttled overwrite. Transmit APC (base64 PNG, 4096-char chunks) fires once per unique image id from `runBuild` in App.tsx. `useImageRegistry.ts` assigns ids 1..255 keyed by `path|modTime|size`; `usePreviewCache.ts` releases the id + emits a delete escape on eviction so terminal-side pixel storage frees in lockstep; `index.tsx` emits delete-all on exit when `hasTransmittedAny()`.
 
 ### Keybindings
 
-- `j/k` — navigate files
+- `j/k` or `↑/↓` — navigate files
 - `g/G` — top/bottom
-- `l/enter` — open directory
-- `h` — parent directory
-- `/` — fuzzy search
+- `l/enter` or `→` — open directory
+- `h` or `←` — parent directory
+- `/` — fuzzy search (`esc` exits search mode)
 - `.` — toggle hidden files
 - `s` — cycle sort mode
 - `t` — cycle theme
@@ -107,22 +110,29 @@ All source code lives in `src/`, organized as:
 - `</> ` — resize panes
 - `R` — reload
 - `backspace` — trash (with confirmation)
-- `q` — quit
+- `q` or `ctrl+c` — quit
+
+## Testing
+
+- Test runner is `bun:test`; run with `bun test` (Bun auto-discovers `*.test.ts` — there is no `test` script in `package.json`).
+- Coverage today is `src/utils/ansiText.test.ts` only. The ANSI text utils are the highest-leverage place to test since scroll math, wrapping, and selection all depend on them — extend this file when touching `ansiText.ts`.
 
 ## Coding Conventions
 
 - Section separators: `// ── section name ────────────────`
 - Theme colors via mutable `colors` export from `theme.ts`
 - Errors set `status` field for display
-- Preview size cap: 256KB (`MAX_PREVIEW_BYTES`), 64KB in `SEER_FAST_MODE`, directory cap: 40 items
-- Office/PDF preview cap: 10MB (docx/xlsx/pdf require full-file reads; content capped at 20k chars or 200 rows); entirely disabled in `SEER_FAST_MODE`
+- All tuning constants live in `src/types.ts` (caps, debounce, thresholds). Touch them there, not at call sites.
+- Preview size cap: `MAX_PREVIEW_BYTES` = 256KB (64KB in fast mode), directory cap `MAX_DIR_PREVIEW` = 40 items
+- Rich-render cap: `MAX_RICH_RENDER_CHARS` = 64KB chars (32KB in fast mode) — applies to code/markdown/office text/json after extraction; CSV/XLSX tables are additionally capped at 200 rows
+- Office/PDF preview cap: 10MB whole-file read (`MAX_OFFICE_BYTES`); entirely disabled in `SEER_FAST_MODE`
 
 ## Environment Variables
 
 | Variable | Effect |
 |---|---|
 | `SEER_NO_NERD_FONT=1` | Use plain Unicode instead of Nerd Font glyphs |
-| `SEER_FAST_MODE=1` | Low-power mode: disables Shiki, markdown rendering, and office/PDF parsers (replaces with size-only placeholder); shrinks `MAX_PREVIEW_BYTES` to 64KB; raises debounce to 150ms; shows `[fast]` badge in the status line. Opt-in for slow CPUs / SSH over slow links. |
+| `SEER_FAST_MODE=1` | Low-power mode: disables Shiki, markdown rendering, and office/PDF parsers (replaces with size-only placeholder); shrinks `MAX_PREVIEW_BYTES` to 64KB and `MAX_RICH_RENDER_CHARS` to 32KB; raises debounce to 150ms; shows `[fast]` badge in the status line. Opt-in for slow CPUs / SSH over slow links. |
 | `SEER_IMAGE_PROTOCOL` | Image rendering protocol. `auto` (default) uses Kitty graphics on Ghostty/Kitty/WezTerm (detected via `supports-terminal-graphics`), falls back to half-blocks. `kitty` forces Kitty-placeholder. `blocks` forces half-blocks. `iterm` is reserved and currently degrades to blocks — iTerm2 inline images can't re-emit on Ink rerenders, so they'd get overdrawn on every state change; half-blocks on iTerm2 already look great. `off` renders a size-only placeholder. TMUX disables Kitty auto-detection (no passthrough). Kitty path shows a `[kitty]` badge in the status line. |
 
 ## Landing the Plane (Session Completion)
@@ -131,7 +141,7 @@ All source code lives in `src/`, organized as:
 
 **MANDATORY WORKFLOW:**
 
-1. **Run quality gates** (if code changed) — `bun run typecheck`
+1. **Run quality gates** (if code changed) — `bun run typecheck` (and `bun test` if `ansiText.ts` was touched)
 2. **PUSH TO REMOTE** — This is MANDATORY:
    ```bash
    git pull --rebase
@@ -146,3 +156,5 @@ All source code lives in `src/`, organized as:
 - NEVER stop before pushing - that leaves work stranded locally
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
+</content>
+</invoke>
