@@ -1,4 +1,17 @@
-# seer
+<p align="center">
+  <a href="https://github.com/zackbart/seer">
+    <img src="https://shieldcn.dev/header/graph.svg?title=seer&subtitle=fast+minimal+TUI+file+browser+with+live+previews&logo=iterm2&mode=light&align=center&font=geist-mono&border=false" alt="seer">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/zackbart/seer/releases/latest">
+    <img src="https://shieldcn.dev/github/release/zackbart/seer.svg" alt="Latest release">
+  </a>
+  <a href="https://github.com/zackbart/seer/stargazers">
+    <img src="https://shieldcn.dev/github/stars/zackbart/seer.svg" alt="Stars">
+  </a>
+</p>
 
 A fast, minimal TUI file browser with live previews - inspired by [Yazi](https://github.com/sxyazi/yazi).
 
