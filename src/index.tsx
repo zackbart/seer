@@ -8,7 +8,7 @@ import { buildKittyDeleteAll, hasTransmittedAny } from "./utils/termGraphics.js"
 // Ensure true-color support for chalk (used by preview renderers)
 if (chalk.level < 3) chalk.level = 3;
 
-const version = "1.0.22";
+const version = "1.0.23";
 
 function printHelp() {
   console.log(`seer ${version}`);

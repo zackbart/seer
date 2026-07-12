@@ -7,6 +7,14 @@ import { categorise, fileIconExt, entryColor, colors } from "../theme.js";
 export async function buildDirPreview(dirPath: string): Promise<string> {
   const items = await fsp.readdir(dirPath, { withFileTypes: true });
 
+  // Match the in-folder listing order: dirs first, then alphabetical.
+  items.sort((a, b) => {
+    const aDir = a.isDirectory();
+    const bDir = b.isDirectory();
+    if (aDir !== bDir) return aDir ? -1 : 1;
+    return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+  });
+
   const lines: string[] = [];
   const dirIcon = fileIconExt(FileCategory.Dir, "");
   lines.push(chalk.hex(colors.dir).bold(`${dirIcon}${path.basename(dirPath)}/`));
