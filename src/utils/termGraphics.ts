@@ -10,7 +10,7 @@
 //
 // iTerm2 inline is intentionally absent — React's useEffect can't re-fire on
 // every Ink frame, so any inline-image write gets overwritten on the next
-// render and stays gone. See CLAUDE.md for the full rationale.
+// render and stays gone. See AGENTS.md for the full rationale.
 
 import supportsTerminalGraphics from "supports-terminal-graphics";
 import { SEER_IMAGE_PROTOCOL, FAST_MODE } from "../types.js";

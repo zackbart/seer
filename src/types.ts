@@ -120,7 +120,7 @@ export const FAST_MODE = process.env.SEER_FAST_MODE === "1";
 // support via supports-terminal-graphics and falls back to half-blocks.
 // `blocks` forces half-blocks, `kitty` forces Kitty-placeholder (will render
 // garbage on terminals that don't support it), `off` renders a size-only
-// placeholder, `iterm` is reserved but not implemented (see CLAUDE.md).
+// placeholder, `iterm` is reserved but not implemented (see AGENTS.md).
 export type ImageProtocol = "auto" | "kitty" | "blocks" | "iterm" | "off";
 const rawImageProtocol = (process.env.SEER_IMAGE_PROTOCOL ?? "auto").toLowerCase();
 export const SEER_IMAGE_PROTOCOL: ImageProtocol =
